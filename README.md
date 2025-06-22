@@ -1,5 +1,5 @@
 # Astronomia - AI-Powered Universe Explorer
-
+![MasterHead](https://github.com/ISAACRITHARSON/Astronoma/blob/main/Banner.png)
 Explore the cosmos with Llama 4-powered narration and intelligent chat assistance.
 
 ## Quick Start
