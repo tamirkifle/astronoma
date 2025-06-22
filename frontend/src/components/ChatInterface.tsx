@@ -47,12 +47,18 @@ export function ChatInterface({ currentView, onNavigate, onGenerateUniverse }: C
       setMessages(prev => [...prev, { role: 'assistant', text: response.text }]);
 
       if (response.action) {
+        console.log('🎯 Chat action received:', response.action);
+        
         if (response.action.type === 'navigate') {
+          console.log('🧭 Navigating to:', response.action.targetId);
           onNavigate(response.action as NavigationAction);
         } else if (response.action.type === 'generate_universe' && onGenerateUniverse) {
           const action = response.action as GenerateUniverseAction;
+          console.log('🌌 Generating universe:', action.universe_type);
           onGenerateUniverse(action.universe_type);
         }
+      } else {
+        console.log('💬 No action in response, just text');
       }
     } catch (error) {
       console.error('Chat error:', error);

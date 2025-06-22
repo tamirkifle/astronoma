@@ -126,10 +126,20 @@ function App() {
   };
 
   const handleNavigate = (action: NavigationAction) => {
-    const target = objects.find(obj => obj.id === action.targetId);
+    console.log('🚀 Navigation action received:', action);
+    
+    const target = objects.find(obj => obj.id.toLowerCase() === action.targetId.toLowerCase());
+    
     if (target) {
+      console.log('✅ Found target object:', target);
       setSelectedObject(target);
-      // The UniverseView component will handle the actual camera movement
+      setViewState(prev => ({
+        ...prev,
+        selectedObjectId: target.id
+      }));
+    } else {
+      console.error('❌ Target object not found:', action.targetId);
+      console.log('Available objects:', objects.map(o => o.id));
     }
   };
 
