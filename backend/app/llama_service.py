@@ -5,6 +5,7 @@ import os
 import uuid
 import time
 import hashlib
+import numpy as np
 from app.models import (
     NarrationRequest, NarrationResponse,
     ChatMessage, ChatResponse, NavigationAction,
@@ -204,19 +205,51 @@ class LlamaService:
             if json_start >= 0 and json_end > json_start:
                 json_str = response_text[json_start:json_end]
                 universe_data = json.loads(json_str)
+
+                # =================================================================
+                # START: ENHANCED OBJECT SPACING LOGIC
+                # =================================================================
+                all_objects = universe_data.get('objects', [])
                 
-                # Validate and create CelestialObjects
+                # Separate objects by type for different spacing rules
+                stars = [obj for obj in all_objects if obj.get('type') == 'star']
+                planets = [obj for obj in all_objects if obj.get('type') == 'planet']
+                moons = [obj for obj in all_objects if obj.get('type') == 'moon']
+                other_objects = [obj for obj in all_objects if obj.get('type') not in ['star', 'planet', 'moon']]
+                
+                # Apply spacing corrections
+                self._apply_object_spacing(stars, planets, moons, other_objects)
+                
+                # Recombine all objects
+                all_objects = stars + planets + moons + other_objects
+                universe_data['objects'] = all_objects
+                # =================================================================
+                # END: ENHANCED OBJECT SPACING LOGIC
+                # =================================================================
+
+                # Define the set of valid types from the Pydantic model
+                VALID_TYPES = {'planet', 'star', 'moon', 'asteroid', 'comet', 'black_hole', 'nebula'}
+
+                # Filter the raw data to only include objects with a valid type
+                valid_objects_data = [
+                    obj for obj in all_objects if obj.get('type') in VALID_TYPES
+                ]
+                
+                if len(valid_objects_data) < len(all_objects):
+                    print(f"🧹 Filtered out {len(all_objects) - len(valid_objects_data)} objects with invalid types.")
+
+                # Validate and create CelestialObjects from the CLEANED list
                 objects = []
-                for obj_data in universe_data.get('objects', []):
+                for obj_data in valid_objects_data:
                     try:
                         # Fix common issues
                         fixed_data = self._fix_llama_response(obj_data)
-                        
+
                         # Create the object
                         obj = CelestialObject(**fixed_data)
                         objects.append(obj)
                     except Exception as e:
-                        print(f"⚠️ Skipping invalid object: {e}")
+                        print(f"⚠️ Skipping invalid object during final validation: {e}")
                         continue
                 
                 if objects:
@@ -243,7 +276,151 @@ class LlamaService:
             return self._generate_star_wars_system(request)
         else:
             return self._generate_default_universe(request)
-    
+
+    def _apply_object_spacing(self, stars, planets, moons, other_objects):
+        """Apply minimum spacing rules to prevent object collisions"""
+        import numpy as np
+        
+        print(f"🔧 Applying spacing corrections to {len(stars)} stars, {len(planets)} planets, {len(moons)} moons")
+        
+        # Helper function to calculate distance between two positions
+        def distance_3d(pos1, pos2):
+            return np.linalg.norm(np.array(pos1) - np.array(pos2))
+        
+        # Helper function to move object away from conflicts
+        def resolve_collision(obj, all_positions, min_distance):
+            obj_pos = np.array(obj.get('position', [0, 0, 0]))
+            obj_size = obj.get('size', 1.0)
+            
+            max_attempts = 50
+            attempt = 0
+            
+            while attempt < max_attempts:
+                collision_found = False
+                
+                for other_pos, other_size in all_positions:
+                    if np.array_equal(obj_pos, other_pos):
+                        continue  # Skip self
+                    
+                    distance = distance_3d(obj_pos, other_pos)
+                    required_distance = min_distance + obj_size + other_size
+                    
+                    if distance < required_distance:
+                        collision_found = True
+                        # Move object away from collision
+                        direction = obj_pos - other_pos
+                        if np.linalg.norm(direction) == 0:
+                            # If perfectly overlapping, choose random direction
+                            direction = np.array([np.random.uniform(-1, 1), np.random.uniform(-0.5, 0.5), np.random.uniform(-1, 1)])
+                        
+                        direction = direction / np.linalg.norm(direction)
+                        obj_pos = other_pos + direction * required_distance * 1.1  # Add 10% buffer
+                        break
+                
+                if not collision_found:
+                    break
+                
+                attempt += 1
+            
+            obj['position'] = obj_pos.tolist()
+            return obj_pos
+        
+        # 1. Fix star positions (stars should be well separated)
+        star_positions = []
+        for i, star in enumerate(stars):
+            if i == 0:
+                # First star at origin or close to it
+                star['position'] = [0, 0, 0]
+                star_positions.append((np.array([0, 0, 0]), star.get('size', 3.0)))
+            else:
+                # Other stars should be far from existing stars
+                min_star_distance = 20.0  # Minimum distance between stars
+                star_pos = resolve_collision(star, star_positions, min_star_distance)
+                star_positions.append((star_pos, star.get('size', 3.0)))
+        
+        # 2. Fix planet positions (should be in reasonable orbits around stars)
+        planet_positions = []
+        for planet in planets:
+            # Find nearest star
+            planet_pos = np.array(planet.get('position', [10, 0, 0]))
+            nearest_star_pos = np.array([0, 0, 0])  # Default to origin
+            
+            if star_positions:
+                distances_to_stars = [distance_3d(planet_pos, star_pos) for star_pos, _ in star_positions]
+                nearest_star_idx = np.argmin(distances_to_stars)
+                nearest_star_pos = star_positions[nearest_star_idx][0]
+            
+            # Ensure planet is not too close to star
+            distance_to_star = distance_3d(planet_pos, nearest_star_pos)
+            star_size = star_positions[0][1] if star_positions else 3.0
+            min_orbit_distance = star_size * 2.0  # Planets should be at least 2x star radius away
+            
+            if distance_to_star < min_orbit_distance:
+                # Move planet to safe orbital distance
+                direction = planet_pos - nearest_star_pos
+                if np.linalg.norm(direction) == 0:
+                    direction = np.array([1, 0, 0])  # Default direction
+                direction = direction / np.linalg.norm(direction)
+                planet_pos = nearest_star_pos + direction * min_orbit_distance
+                planet['position'] = planet_pos.tolist()
+            
+            # Check for planet-planet collisions
+            min_planet_distance = 3.0  # Minimum distance between planets
+            all_existing = star_positions + planet_positions
+            planet_pos = resolve_collision(planet, all_existing, min_planet_distance)
+            planet_positions.append((planet_pos, planet.get('size', 1.0)))
+        
+        # 3. Fix moon positions (must orbit their parent planets)
+        for moon in moons:
+            parent_planet = None
+            moon_pos = np.array(moon.get('position', [0, 0, 0]))
+            
+            # Find parent planet by looking for its name in the moon's info or by proximity
+            for planet in planets:
+                planet_pos = np.array(planet.get('position', [0, 0, 0]))
+                if planet.get('name', '') in moon.get('info', {}).get('distance', ''):
+                    parent_planet = planet
+                    break
+            
+            # If no parent found by name, find closest planet
+            if not parent_planet and planets:
+                distances = [distance_3d(moon_pos, np.array(p.get('position', [0, 0, 0]))) for p in planets]
+                closest_idx = np.argmin(distances)
+                parent_planet = planets[closest_idx]
+            
+            if parent_planet:
+                parent_pos = np.array(parent_planet.get('position', [0, 0, 0]))
+                parent_size = parent_planet.get('size', 1.0)
+                moon_size = moon.get('size', 0.1)
+                
+                # Ensure moon is in a safe orbit around parent planet
+                distance_to_parent = distance_3d(moon_pos, parent_pos)
+                min_moon_distance = parent_size + moon_size + 0.5  # Minimum safe distance
+                max_moon_distance = parent_size * 8.0  # Maximum reasonable moon distance
+                
+                if distance_to_parent < min_moon_distance or distance_to_parent > max_moon_distance:
+                    # Place moon at ideal distance
+                    ideal_distance = parent_size * 2.5  # Sweet spot for moon orbit
+                    direction = moon_pos - parent_pos
+                    if np.linalg.norm(direction) == 0:
+                        # If overlapping, choose random orbital direction
+                        angle = np.random.uniform(0, 2 * np.pi)
+                        direction = np.array([np.cos(angle), np.random.uniform(-0.3, 0.3), np.sin(angle)])
+                    
+                    direction = direction / np.linalg.norm(direction)
+                    moon_pos = parent_pos + direction * ideal_distance
+                    moon['position'] = moon_pos.tolist()
+                    
+                    print(f"🔧 Repositioned moon '{moon.get('name')}' to safe orbit around '{parent_planet.get('name')}'")
+        
+        # 4. Handle other objects (asteroids, comets, etc.)
+        all_existing_positions = star_positions + planet_positions
+        for obj in other_objects:
+            min_distance = 2.0  # Minimum distance from other objects
+            resolve_collision(obj, all_existing_positions, min_distance)
+        
+        print(f"✅ Object spacing corrections completed")
+        
     def _build_universe_generation_prompt(self, request: UniverseGenerationRequest) -> str:
         """Build detailed prompt for universe generation"""
         
@@ -288,6 +465,7 @@ IMPORTANT:
 - narrationPrompt must be a single string, not an array
 - All objects must have info.distance and info.temp
 - Stars should have distance "0 AU"
+- For moons, their `position` must be offset from their parent planet's position by a distance greater than the parent's `size`. Position them in a realistic orbit.
 - Use scientifically accurate colors, temperatures, and atmospheres
 - For fictional universes, use canonical information from the source material
 
@@ -342,8 +520,8 @@ Guidelines for {request.universe_type}:
 """
         
         base_prompt += """
-Ensure all positions spread objects appropriately in 3D space.
-Make it educational and visually interesting for space exploration.
+IMPORTANT: To create a realistic 3D effect, ensure the 'y' and 'z' coordinates in the 'position' array are varied. Do not place all objects on the same plane (e.g., where y=0 for all objects). Spread them out.
+Make it educational and visually interesting for space exploration. 
 Use your knowledge to make all parameters as accurate as possible."""
         
         return base_prompt

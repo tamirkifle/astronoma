@@ -1,3 +1,5 @@
+// frontend/src/App.tsx - Debug version with extensive logging
+
 import React, { useState, useEffect } from 'react';
 import { UniverseView } from './components/UniverseView';
 import { SearchBar } from './components/SearchBar';
@@ -124,6 +126,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [showHyperspace, setShowHyperspace] = useState(false);
   const [hyperspaceDestination, setHyperspaceDestination] = useState('');
+  const [pendingUniverse, setPendingUniverse] = useState<GeneratedUniverse | null>(null);
   const [currentUniverse, setCurrentUniverse] = useState<GeneratedUniverse | null>({
     id: 'solar-system',
     type: 'solar-system',
@@ -142,6 +145,34 @@ function App() {
     'star-wars',
     'fictional'
   ]);
+
+  // DEBUG: Add extensive logging to track state changes
+  useEffect(() => {
+    console.log('🔍 DEBUG: objects state changed:', {
+      objectCount: objects.length,
+      objectNames: objects.map(obj => obj.name),
+      firstObject: objects[0]
+    });
+  }, [objects]);
+
+  useEffect(() => {
+    console.log('🔍 DEBUG: pendingUniverse state changed:', {
+      hasPendingUniverse: !!pendingUniverse,
+      pendingUniverseName: pendingUniverse?.name,
+      pendingObjectCount: pendingUniverse?.objects.length
+    });
+  }, [pendingUniverse]);
+
+  useEffect(() => {
+    console.log('🔍 DEBUG: currentUniverse state changed:', {
+      currentUniverseName: currentUniverse?.name,
+      currentObjectCount: currentUniverse?.objects.length
+    });
+  }, [currentUniverse]);
+
+  useEffect(() => {
+    console.log('🔍 DEBUG: showHyperspace state changed:', showHyperspace);
+  }, [showHyperspace]);
 
   useEffect(() => {
     // Load enhanced data in the background
@@ -178,17 +209,19 @@ function App() {
   };
 
   const loadUniverse = async (type: string = 'solar-system') => {
+    console.log('🌌 DEBUG: loadUniverse called with type:', type);
     setError(null);
     
     if (type === 'solar-system') {
+      console.log('🌌 DEBUG: Loading solar system...');
       // For solar system, just show it immediately
-      setObjects(basicSolarSystem);
+      setObjects([...basicSolarSystem]); // Use spread to create new array reference
       setCurrentUniverse({
         id: 'solar-system',
         type: 'solar-system',
         name: 'Our Solar System',
         description: 'The solar system we call home',
-        objects: basicSolarSystem,
+        objects: [...basicSolarSystem], // Use spread here too
         generated_at: Date.now(),
         parameters_used: {}
       });
@@ -196,6 +229,8 @@ function App() {
       // Then load enhanced data
       loadEnhancedData();
     } else {
+      console.log('🌌 DEBUG: Loading generated universe:', type);
+      
       // Show hyperspace jump for other universes
       const destinationName = type.split('-').map(word => 
         word.charAt(0).toUpperCase() + word.slice(1)
@@ -203,33 +238,95 @@ function App() {
       
       setHyperspaceDestination(destinationName);
       setShowHyperspace(true);
+      setPendingUniverse(null); // Clear any pending universe
       
-      try {
-        // Generate the universe while showing hyperspace
-        const universe = await apiClient.generateUniverse({
-          universe_type: type as any,
-          parameters: {
-            size: 'medium',
-            complexity: 'moderate',
-            style: 'realistic'
-          }
+      console.log('🌌 DEBUG: Starting universe generation API call...');
+      
+      // Start universe generation - DON'T await here, let hyperspace handle it
+      const universePromise = apiClient.generateUniverse({
+        universe_type: type as any,
+        parameters: {
+          size: 'medium',
+          complexity: 'moderate',
+          style: 'realistic'
+        }
+      }).then(universe => {
+        console.log('✅ DEBUG: Universe generated successfully:', {
+          name: universe.name,
+          objectCount: universe.objects.length,
+          objects: universe.objects.map(obj => ({ id: obj.id, name: obj.name, position: obj.position }))
         });
         
-        // Update the universe data (will be applied when hyperspace completes)
-        setObjects(universe.objects);
-        setCurrentUniverse(universe);
+        // Create a completely new array reference to ensure React detects the change
+        const newObjects = universe.objects.map(obj => ({ ...obj }));
+        const newUniverse = { 
+          ...universe, 
+          objects: newObjects 
+        };
+        
+        console.log('🌌 DEBUG: Setting pendingUniverse with new objects:', newObjects.length);
+        setPendingUniverse(newUniverse);
         
         // Start loading textures in background
-        textureService.loadTexturesForObjects(universe.objects);
-      } catch (error) {
-        console.error('Failed to generate universe:', error);
+        textureService.loadTexturesForObjects(newObjects);
+        
+        return newUniverse;
+      }).catch(error => {
+        console.error('❌ DEBUG: Failed to generate universe:', error);
         setError('Failed to generate universe');
         setShowHyperspace(false);
-      }
+        setPendingUniverse(null);
+        throw error;
+      });
+      
+      // Don't await here - let the hyperspace component handle the timing
+      console.log('🌌 DEBUG: Universe generation started in parallel with hyperspace...');
+    }
+  };
+
+  // Handle hyperspace completion - only complete when universe is ready
+  const handleHyperspaceComplete = () => {
+    console.log('🚀 DEBUG: Hyperspace jump timer completed');
+    console.log('🔍 DEBUG: pendingUniverse exists?', !!pendingUniverse);
+    console.log('🔍 DEBUG: pendingUniverse details:', pendingUniverse ? {
+      name: pendingUniverse.name,
+      objectCount: pendingUniverse.objects.length,
+      firstObject: pendingUniverse.objects[0]?.name
+    } : 'null');
+    
+    if (pendingUniverse) {
+      console.log('✅ DEBUG: Universe is ready, applying:', pendingUniverse.name);
+      
+      // Create completely new array references to trigger React updates
+      const newObjects = pendingUniverse.objects.map(obj => ({ ...obj }));
+      const newUniverse = { ...pendingUniverse, objects: newObjects };
+      
+      console.log('🔄 DEBUG: Setting objects state with:', newObjects.length, 'objects');
+      setObjects(newObjects);
+      
+      console.log('🔄 DEBUG: Setting currentUniverse state');
+      setCurrentUniverse(newUniverse);
+      
+      console.log('🔄 DEBUG: Clearing pendingUniverse');
+      setPendingUniverse(null);
+      
+      // Reset view state for new universe
+      setSelectedObject(null);
+      setViewState(initialViewState);
+      
+      console.log('🔄 DEBUG: Hiding hyperspace');
+      setShowHyperspace(false);
+      
+      console.log('✅ DEBUG: Universe application complete!');
+    } else {
+      console.log('⏳ DEBUG: Universe not ready yet, extending hyperspace...');
+      // Don't hide hyperspace yet - universe is still generating
+      // The hyperspace component will keep showing until universe is ready
     }
   };
 
   const handleObjectClick = (object: CelestialObject) => {
+    console.log('🎯 DEBUG: Object clicked:', object.name);
     setSelectedObject(object);
     setViewState(prev => ({
       ...prev,
@@ -270,15 +367,25 @@ function App() {
   };
 
   const handleUniverseChange = async (type: string) => {
+    console.log('🌍 DEBUG: handleUniverseChange called with:', type);
+    
     // Add dynamic universe types if not already in list
     if (!availableUniverses.includes(type)) {
       setAvailableUniverses(prev => [...prev, type]);
     }
     
+    // Clear current selection but don't reset view state until universe loads
     setSelectedObject(null);
-    setViewState(initialViewState);
+    
     await loadUniverse(type);
   };
+
+  console.log('🔍 DEBUG: App render with:', {
+    objectCount: objects.length,
+    showHyperspace,
+    hasPendingUniverse: !!pendingUniverse,
+    currentUniverseName: currentUniverse?.name
+  });
 
   return (
     <>
@@ -286,7 +393,8 @@ function App() {
       {showHyperspace && (
         <HyperspaceJump
           universeName={hyperspaceDestination}
-          onComplete={() => setShowHyperspace(false)}
+          onComplete={handleHyperspaceComplete}
+          isUniverseReady={!!pendingUniverse} // Pass universe readiness state
         />
       )}
       
@@ -310,21 +418,21 @@ function App() {
               <div className="text-white/80">
                 <h1 className="text-2xl font-light">{currentUniverse?.name || 'Unknown Universe'}</h1>
                 <p className="text-sm text-white/60">{currentUniverse?.description}</p>
+                <p className="text-xs text-white/40">Objects: {objects.length}</p>
                 {error && (
                   <p className="text-sm text-yellow-400 mt-1">⚠️ Failed to generate universe</p>
                 )}
+                {showHyperspace && pendingUniverse && (
+                  <p className="text-sm text-blue-400 mt-1">🌌 New universe ready, jump in progress...</p>
+                )}
               </div>
-              
-              {/* Search Bar
-              <div className="flex-1 max-w-md mx-8">
-                <SearchBar onSearch={handleSearch} />
-              </div> */}
               
               {/* Universe Type Selector */}
               <select
                 value={currentUniverse?.type || 'solar-system'}
                 onChange={(e) => handleUniverseChange(e.target.value)}
                 className="glass px-4 py-2 rounded-lg text-white bg-transparent outline-none cursor-pointer"
+                disabled={showHyperspace} // Disable during hyperspace
               >
                 {availableUniverses.map(universeType => (
                   <option key={universeType} value={universeType} className="bg-gray-800">
@@ -343,7 +451,7 @@ function App() {
           </div>
 
           {/* Info Panel */}
-          {selectedObject && (
+          {selectedObject && !showHyperspace && (
             <div className="absolute left-8 top-1/2 -translate-y-1/2 pointer-events-auto">
               <InfoPanel 
                 object={selectedObject} 
@@ -353,18 +461,20 @@ function App() {
           )}
 
           {/* Chat Interface */}
-          <div className="absolute bottom-8 right-8 pointer-events-auto">
-            <ChatInterface 
-              currentView={viewState}
-              onNavigate={handleNavigate}
-              onGenerateUniverse={handleUniverseChange}
-              currentUniverse={currentUniverse}
-              objects={objects}
-            />
-          </div>
+          {!showHyperspace && (
+            <div className="absolute bottom-8 right-8 pointer-events-auto">
+              <ChatInterface 
+                currentView={viewState}
+                onNavigate={handleNavigate}
+                onGenerateUniverse={handleUniverseChange}
+                currentUniverse={currentUniverse}
+                objects={objects}
+              />
+            </div>
+          )}
 
           {/* Narration Controls */}
-          {selectedObject && (
+          {selectedObject && !showHyperspace && (
             <div className="absolute bottom-8 left-1/2 -translate-x-1/2 pointer-events-auto">
               <NarrationControls object={selectedObject} />
             </div>

@@ -121,6 +121,36 @@ class TextureGenerator:
 
         return img.filter(ImageFilter.SMOOTH_MORE)
 
+    def generate_ring_texture(self, base_color: str, opacity: float) -> dict:
+        """Generates a texture for a planetary ring system."""
+        texture_id = hashlib.md5(f"ring_{base_color}_{opacity}".encode()).hexdigest()[:12]
+        ring_path = f"{self.texture_dir}/{texture_id}_ring.png"
+
+        if os.path.exists(ring_path):
+            return {'ring': f"/textures/{texture_id}_ring.png", 'cached': True}
+
+        img = Image.new('RGBA', (self.width, 64), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        
+        rgb = self._hex_to_rgb(base_color)
+        
+        for i in range(self.width):
+            # Simulate ring particles and gaps
+            if random.random() > 0.1:
+                alpha = int((random.uniform(0.5, 1.0) * opacity) * 255)
+                color_variation = random.randint(-15, 15)
+                final_color = (
+                    max(0, min(255, rgb[0] + color_variation)),
+                    max(0, min(255, rgb[1] + color_variation)),
+                    max(0, min(255, rgb[2] + color_variation)),
+                    alpha
+                )
+                draw.line([(i, 0), (i, 64)], fill=final_color)
+
+        img.save(ring_path, 'PNG')
+
+        return {'ring': f"/textures/{texture_id}_ring.png"}
+        
     def _generate_terrestrial_texture(self) -> Image.Image:
         img = Image.new('RGB', (self.width, self.height))
         pixels = img.load()
