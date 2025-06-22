@@ -4,7 +4,7 @@
 
 
 
-Explore the cosmos with Llama 4-powered narration and Intelligent Chat assistance.
+Explore the cosmos with Llama 4-powered narration and intelligent Chat assistance.
 ## Quick Start
 
 ### Prerequisites
