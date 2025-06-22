@@ -1,7 +1,7 @@
 export interface CelestialObject {
   id: string;
   name: string;
-  type: 'planet' | 'star' | 'moon';
+  type: 'planet' | 'star' | 'moon' | 'asteroid' | 'comet' | 'black_hole' | 'nebula';
   position: [number, number, number];
   size: number;
   color: string;
@@ -16,6 +16,7 @@ export interface ObjectInfo {
   moons?: number;
   atmosphere?: string;
   magnitude?: string;
+  interesting_fact?: string;
 }
 
 export interface NarrationRequest {
@@ -50,4 +51,35 @@ export interface ViewState {
   cameraPosition: [number, number, number];
   lookAt: [number, number, number];
   selectedObjectId?: string;
+}
+
+// New universe generation types
+export interface UniverseGenerationRequest {
+  universe_type: 'solar-system' | 'exoplanet-system' | 'galaxy-core' | 'fictional' | 'binary-system';
+  parameters?: UniverseGenerationParameters;
+}
+
+export interface UniverseGenerationParameters {
+  size?: 'small' | 'medium' | 'large';
+  complexity?: 'simple' | 'moderate' | 'complex';
+  style?: 'realistic' | 'educational' | 'fantastical';
+  theme?: string;
+  num_objects?: number;
+}
+
+export interface GeneratedUniverse {
+  id: string;
+  type: string;
+  name: string;
+  description: string;
+  objects: CelestialObject[];
+  generated_at: number;
+  parameters_used: Record<string, any>;
+}
+
+export interface UniverseTemplate {
+  id: string;
+  name: string;
+  description: string;
+  preview_image?: string;
 }

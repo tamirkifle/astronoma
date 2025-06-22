@@ -35,7 +35,7 @@ export function InfoPanel({ object, onClose }: InfoPanelProps) {
       <div className="space-y-3">
         <InfoRow label="Distance" value={object.info.distance} />
         <InfoRow label="Temperature" value={object.info.temp} />
-        {object.info.moons !== undefined && (
+        {object.info.moons !== undefined && object.info.moons !== null && (
           <InfoRow label="Moons" value={object.info.moons.toString()} />
         )}
         {object.info.atmosphere && (
@@ -43,6 +43,13 @@ export function InfoPanel({ object, onClose }: InfoPanelProps) {
         )}
         {object.info.magnitude && (
           <InfoRow label="Magnitude" value={object.info.magnitude} />
+        )}
+        {object.info.interesting_fact && (
+          <div className="pt-3 mt-3 border-t border-white/10">
+            <p className="text-white/80 text-sm italic">
+              {object.info.interesting_fact}
+            </p>
+          </div>
         )}
       </div>
     </motion.div>

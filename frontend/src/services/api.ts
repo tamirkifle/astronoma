@@ -5,7 +5,10 @@ import {
   NarrationResponse,
   ChatMessage, 
   ChatResponse,
-  NavigationAction // This is not used for socket events, but good to have
+  NavigationAction,
+  UniverseGenerationRequest,
+  GeneratedUniverse,
+  UniverseTemplate
 } from '../types/interfaces';
 
 class APIClient {
@@ -16,24 +19,16 @@ class APIClient {
     this.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
     
     this.socket = io(this.baseURL, {
-      // Explicitly connect with WebSockets. This often bypasses issues with HTTP polling.
       transports: ['websocket'], 
-      
-      // Explicitly set the path for the Socket.IO server.
-      // This must match the default path on the Python server.
       path: '/socket.io/', 
-
-      // You can add this if you see any "upgrade required" errors, but it's often not needed.
-      // upgrade: false, 
     });
     
     this.socket.on('connect', () => {
       console.log('✅ Socket connected successfully! SID:', this.socket.id);
     });
 
-    // Listen for the welcome event from your backend
     this.socket.on('connection_established', (data) => {
-        console.log('🎉 Server says:', data.message);
+      console.log('🎉 Server says:', data.message);
     });
     
     this.socket.on('disconnect', (reason) => {
@@ -41,7 +36,7 @@ class APIClient {
     });
 
     this.socket.on('connect_error', (error) => {
-        console.error('❌ Socket connection error:', error.message, error.name);
+      console.error('❌ Socket connection error:', error.message, error.name);
     });
   }
 
@@ -51,6 +46,32 @@ class APIClient {
       throw new Error('Failed to fetch universe data');
     }
     return response.json();
+  }
+
+  async generateUniverse(request: UniverseGenerationRequest): Promise<GeneratedUniverse> {
+    const response = await fetch(`${this.baseURL}/universe/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to generate universe');
+    }
+    
+    return response.json();
+  }
+
+  async getUniverseTemplates(): Promise<UniverseTemplate[]> {
+    const response = await fetch(`${this.baseURL}/universe/templates`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch universe templates');
+    }
+    const data = await response.json();
+    return data.templates;
   }
 
   requestNarration(request: NarrationRequest): Promise<NarrationResponse> {

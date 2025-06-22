@@ -1,4 +1,4 @@
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict, Any
 from pydantic import BaseModel
 
 class ObjectInfo(BaseModel):
@@ -7,11 +7,12 @@ class ObjectInfo(BaseModel):
     moons: Optional[int] = None
     atmosphere: Optional[str] = None
     magnitude: Optional[str] = None
+    interesting_fact: Optional[str] = None  # New field for AI-generated facts
 
 class CelestialObject(BaseModel):
     id: str
     name: str
-    type: Literal['planet', 'star', 'moon']
+    type: Literal['planet', 'star', 'moon', 'asteroid', 'comet', 'black_hole', 'nebula']  # Extended types
     position: List[float]  # [x, y, z]
     size: float
     color: str
@@ -49,3 +50,24 @@ class ChatResponse(BaseModel):
 
 class UniverseData(BaseModel):
     objects: List[CelestialObject]
+
+# New models for universe generation
+class UniverseGenerationRequest(BaseModel):
+    universe_type: Literal['solar-system', 'exoplanet-system', 'galaxy-core', 'fictional', 'binary-system']
+    parameters: Optional[Dict[str, Any]] = None
+    
+class UniverseGenerationParameters(BaseModel):
+    size: Literal['small', 'medium', 'large'] = 'medium'
+    complexity: Literal['simple', 'moderate', 'complex'] = 'moderate'
+    style: Literal['realistic', 'educational', 'fantastical'] = 'realistic'
+    theme: Optional[str] = None  # e.g., "ice worlds", "desert planets"
+    num_objects: Optional[int] = None  # Override default count
+
+class GeneratedUniverse(BaseModel):
+    id: str
+    type: str
+    name: str
+    description: str
+    objects: List[CelestialObject]
+    generated_at: int  # Timestamp
+    parameters_used: Dict[str, Any]
