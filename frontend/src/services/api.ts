@@ -4,7 +4,8 @@ import {
   NarrationRequest, 
   NarrationResponse,
   ChatMessage, 
-  ChatResponse 
+  ChatResponse,
+  NavigationAction // This is not used for socket events, but good to have
 } from '../types/interfaces';
 
 class APIClient {
@@ -13,14 +14,34 @@ class APIClient {
 
   constructor() {
     this.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-    this.socket = io(this.baseURL);
     
-    this.socket.on('connect', () => {
-      console.log('Connected to server');
+    this.socket = io(this.baseURL, {
+      // Explicitly connect with WebSockets. This often bypasses issues with HTTP polling.
+      transports: ['websocket'], 
+      
+      // Explicitly set the path for the Socket.IO server.
+      // This must match the default path on the Python server.
+      path: '/socket.io/', 
+
+      // You can add this if you see any "upgrade required" errors, but it's often not needed.
+      // upgrade: false, 
     });
     
-    this.socket.on('disconnect', () => {
-      console.log('Disconnected from server');
+    this.socket.on('connect', () => {
+      console.log('✅ Socket connected successfully! SID:', this.socket.id);
+    });
+
+    // Listen for the welcome event from your backend
+    this.socket.on('connection_established', (data) => {
+        console.log('🎉 Server says:', data.message);
+    });
+    
+    this.socket.on('disconnect', (reason) => {
+      console.log('🛑 Socket disconnected:', reason);
+    });
+
+    this.socket.on('connect_error', (error) => {
+        console.error('❌ Socket connection error:', error.message, error.name);
     });
   }
 
