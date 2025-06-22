@@ -11,6 +11,44 @@ import {
   UniverseTemplate
 } from '../types/interfaces';
 
+// Speech-related interfaces
+interface SpeechInputRequest {
+  audio_data: string;
+  language?: string;
+  sample_rate?: number;
+  sample_width?: number;
+}
+
+interface SpeechInputResponse {
+  success: boolean;
+  text?: string;
+  language?: string;
+  confidence?: number;
+  error?: string;
+}
+
+interface SpeechOutputRequest {
+  text: string;
+  language: string;
+  voice_type: string;
+}
+
+interface SpeechOutputResponse {
+  success: boolean;
+  audio_url?: string;
+  error?: string;
+}
+
+interface LanguageInfo {
+  code: string;
+  name: string;
+  native_name: string;
+}
+
+interface AvailableLanguagesResponse {
+  languages: LanguageInfo[];
+}
+
 class APIClient {
   private socket: Socket | null = null;
   private baseURL: string;
@@ -139,6 +177,97 @@ class APIClient {
     }
     const data = await response.json();
     return data.templates;
+  }
+
+  // Speech-related API methods
+  async transcribeSpeech(request: SpeechInputRequest): Promise<SpeechInputResponse> {
+    const response = await fetch(`${this.baseURL}/speech/transcribe`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to transcribe speech');
+    }
+    
+    return response.json();
+  }
+
+  async synthesizeSpeech(request: SpeechOutputRequest): Promise<SpeechOutputResponse> {
+    const response = await fetch(`${this.baseURL}/speech/synthesize`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to synthesize speech');
+    }
+    
+    return response.json();
+  }
+
+  async getAvailableLanguages(): Promise<AvailableLanguagesResponse> {
+    const response = await fetch(`${this.baseURL}/speech/languages`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch available languages');
+    }
+    return response.json();
+  }
+
+  // WebSocket-based speech methods
+  transcribeSpeechWS(audioData: string, language: string = 'en'): Promise<SpeechInputResponse> {
+    return new Promise((resolve, reject) => {
+      this.socket.emit('speech_input', {
+        audio_data: audioData,
+        language: language
+      });
+      
+      const timeout = setTimeout(() => {
+        reject(new Error('Speech transcription timeout'));
+      }, 10000);
+      
+      this.socket.once('speech_input_response', (response: SpeechInputResponse) => {
+        clearTimeout(timeout);
+        resolve(response);
+      });
+      
+      this.socket.once('speech_input_error', (error: any) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+    });
+  }
+
+  synthesizeSpeechWS(text: string, language: string = 'en', voiceType: string = 'neural'): Promise<SpeechOutputResponse> {
+    return new Promise((resolve, reject) => {
+      this.socket.emit('speech_output', {
+        text: text,
+        language: language,
+        voice_type: voiceType
+      });
+      
+      const timeout = setTimeout(() => {
+        reject(new Error('Speech synthesis timeout'));
+      }, 10000);
+      
+      this.socket.once('speech_output_response', (response: SpeechOutputResponse) => {
+        clearTimeout(timeout);
+        resolve(response);
+      });
+      
+      this.socket.once('speech_output_error', (error: any) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+    });
   }
 
   requestNarration(request: NarrationRequest): Promise<NarrationResponse> {

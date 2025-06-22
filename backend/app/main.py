@@ -12,14 +12,17 @@ import concurrent.futures
 from dotenv import load_dotenv
 import uvicorn
 from typing import Dict, Any, List
+import base64
 
 from app.models import (
     UniverseData, NarrationRequest, NarrationResponse,
     ChatMessage, ChatResponse, UniverseGenerationRequest,
-    GeneratedUniverse, CelestialObject
+    GeneratedUniverse, SpeechInputRequest, SpeechInputResponse,
+    SpeechOutputRequest, SpeechOutputResponse, AvailableLanguagesResponse
 )
 from app.llama_service import LlamaService
-from app.texture_generator import TextureGenerator
+from app.speech_service import speech_service
+from app.texture_generator import TextureGenerator  # Added missing import
 
 # Load environment variables
 load_dotenv()
@@ -58,8 +61,13 @@ llama_service = LlamaService(os.getenv("LLAMA_API_KEY", "demo_key"))
 ENABLE_TEXTURE_GENERATION = os.getenv("ENABLE_TEXTURE_GENERATION", "true").lower() == "true"
 
 if ENABLE_TEXTURE_GENERATION:
-    texture_generator = TextureGenerator()
-    print("✅ Texture generation enabled")
+    try:
+        texture_generator = TextureGenerator()
+        print("✅ Texture generation enabled")
+    except Exception as e:
+        print(f"⚠️ Failed to initialize texture generator: {e}")
+        texture_generator = None
+        print("⚠️ Texture generation disabled")
 else:
     texture_generator = None
     print("⚠️ Texture generation disabled")
@@ -76,6 +84,68 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "astronoma-api"}
+
+# Speech-related endpoints
+@app.post("/speech/transcribe", response_model=SpeechInputResponse)
+async def transcribe_speech(request: SpeechInputRequest):
+    """Transcribe speech to text"""
+    try:
+        # Decode base64 audio data
+        audio_data = base64.b64decode(request.audio_data)
+        
+        # Process speech input
+        result = await speech_service.process_speech_input(
+            audio_data, 
+            request.language
+        )
+        
+        return SpeechInputResponse(**result)
+        
+    except Exception as e:
+        print(f"❌ Speech transcription error: {e}")
+        return SpeechInputResponse(
+            success=False,
+            error=str(e)
+        )
+
+@app.post("/speech/synthesize", response_model=SpeechOutputResponse)
+async def synthesize_speech(request: SpeechOutputRequest):
+    """Synthesize text to speech"""
+    try:
+        # Generate speech
+        audio_url = await speech_service.synthesize_speech(
+            request.text,
+            request.language,
+            request.voice_type
+        )
+        
+        if audio_url:
+            return SpeechOutputResponse(
+                success=True,
+                audio_url=audio_url
+            )
+        else:
+            return SpeechOutputResponse(
+                success=False,
+                error="Failed to synthesize speech"
+            )
+            
+    except Exception as e:
+        print(f"❌ Speech synthesis error: {e}")
+        return SpeechOutputResponse(
+            success=False,
+            error=str(e)
+        )
+
+@app.get("/speech/languages", response_model=AvailableLanguagesResponse)
+async def get_available_languages():
+    """Get list of available languages for speech processing"""
+    try:
+        languages = await speech_service.get_available_languages()
+        return AvailableLanguagesResponse(languages=languages)
+    except Exception as e:
+        print(f"❌ Error getting languages: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/universe/{universe_id}")
 async def get_universe(universe_id: str):
@@ -110,32 +180,36 @@ async def generate_universe(request: UniverseGenerationRequest):
         # Generate the universe
         generated_universe = await llama_service.generate_universe(request)
         
-        # Generate textures for each object
-        for obj in generated_universe.objects:
-            # Determine planet type based on properties
-            planet_type = "star" if obj.type == "star" else \
-                        "gas" if obj.info.atmosphere and "Hydrogen" in obj.info.atmosphere else \
-                        "ice" if obj.info.temp and int(obj.info.temp.replace("K", "").strip()) < 200 else \
-                        "terrestrial" if obj.info.atmosphere and "Oxygen" in obj.info.atmosphere else "rocky"
-            
-            # Get temperature
-            temp = None
-            if obj.info.temp:
+        # Generate textures for each object (if texture generator is available)
+        if texture_generator:
+            for obj in generated_universe.objects:
                 try:
-                    temp = int(obj.info.temp.replace("K", "").replace(",", "").strip())
-                except:
-                    pass
-            
-            # Generate texture
-            texture_data = texture_generator.generate_texture(
-                planet_type=planet_type,
-                base_color=obj.color,
-                name=obj.name,
-                temperature=temp
-            )
-            
-            # Cache it
-            texture_cache[obj.id] = texture_data
+                    # Determine planet type based on properties
+                    planet_type = "star" if obj.type == "star" else \
+                                "gas" if obj.info.atmosphere and "Hydrogen" in obj.info.atmosphere else \
+                                "ice" if obj.info.temp and int(obj.info.temp.replace("K", "").strip()) < 200 else \
+                                "terrestrial" if obj.info.atmosphere and "Oxygen" in obj.info.atmosphere else "rocky"
+                    
+                    # Get temperature
+                    temp = None
+                    if obj.info.temp:
+                        try:
+                            temp = int(obj.info.temp.replace("K", "").replace(",", "").strip())
+                        except:
+                            pass
+                    
+                    # Generate texture
+                    texture_data = texture_generator.generate_texture(
+                        planet_type=planet_type,
+                        base_color=obj.color,
+                        name=obj.name,
+                        temperature=temp
+                    )
+                    
+                    # Cache it
+                    texture_cache[obj.id] = texture_data
+                except Exception as tex_error:
+                    print(f"⚠️ Failed to generate texture for {obj.name}: {tex_error}")
         
         # Cache the generated universe
         universe_dict = {
@@ -166,6 +240,12 @@ async def generate_textures_batch(objects: List[Dict[str, Any]]):
     """Generate textures for multiple objects in batch"""
     results = {}
     
+    if not texture_generator:
+        print("⚠️ Texture generator not available")
+        for obj in objects:
+            results[obj["id"]] = {"error": "Texture generation not available"}
+        return results
+    
     for obj in objects:
         try:
             obj_id = obj["id"]
@@ -175,13 +255,6 @@ async def generate_textures_batch(objects: List[Dict[str, Any]]):
                 results[obj_id] = texture_cache[obj_id]
                 continue
             
-            # Determine planet type based on properties and name
-            planet_type = "star" if obj["type"] == "star" else \
-                        "gas" if obj.get("name") in ["Jupiter", "Saturn", "Uranus", "Neptune", "Bespin"] else \
-                        "ice" if obj.get("name") in ["Uranus", "Neptune", "Hoth"] or (temp and temp < 150) else \
-                        "terrestrial" if obj.get("name") in ["Earth", "Endor", "Coruscant"] else \
-                        "rocky" if temp and temp > 600 else "rocky"  # Volcanic planets like Mustafar
-            
             # Get temperature if available
             temp = None
             if "temp" in obj.get("info", {}):
@@ -189,6 +262,13 @@ async def generate_textures_batch(objects: List[Dict[str, Any]]):
                     temp = int(obj["info"]["temp"].replace("K", "").replace(",", "").strip())
                 except:
                     pass
+            
+            # Determine planet type based on properties and name
+            planet_type = "star" if obj["type"] == "star" else \
+                        "gas" if obj.get("name") in ["Jupiter", "Saturn", "Uranus", "Neptune", "Bespin"] else \
+                        "ice" if obj.get("name") in ["Uranus", "Neptune", "Hoth"] or (temp and temp < 150) else \
+                        "terrestrial" if obj.get("name") in ["Earth", "Endor", "Coruscant"] else \
+                        "rocky" if temp and temp > 600 else "rocky"  # Volcanic planets like Mustafar
             
             # Generate texture
             texture_data = texture_generator.generate_texture(
@@ -298,6 +378,18 @@ async def test_llama():
             "error": str(e),
             "traceback": traceback.format_exc()
         }
+    
+@app.post("/planet/generate-texture")
+async def generate_planet_texture(planet_id: str, description: str):
+    """
+    Generate a texture image for a planet using Llama 4 API.
+    """
+    if not texture_generator:
+        raise HTTPException(status_code=503, detail="Texture generation not available")
+    
+    # This would need to be implemented in texture_generator
+    # For now, return an error
+    raise HTTPException(status_code=501, detail="Planet texture generation not implemented")
 
 @app.get("/debug/check-env")
 async def check_environment():
@@ -307,8 +399,25 @@ async def check_environment():
         "has_api_key": bool(api_key),
         "api_key_length": len(api_key),
         "api_key_preview": f"{api_key[:10]}..." if api_key else "NOT SET",
-        "env_vars": list(os.environ.keys())
+        "env_vars": list(os.environ.keys()),
+        "texture_generator_available": texture_generator is not None
     }
+
+@app.post("/chat", response_model=ChatResponse)
+async def send_chat_message(request: ChatMessage):
+    """Send a chat message and get AI response"""
+    try:
+        print(f"💬 Chat message received: {request.message}")
+        
+        # Call the llama service
+        response = await llama_service.handle_chat(request)
+        
+        return response
+    except Exception as e:
+        print(f"❌ Chat error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Socket.IO Event Handlers
 @sio.event
@@ -353,6 +462,52 @@ async def handle_chat_message(sid, data):
         traceback.print_exc()
         await sio.emit('chat_error', {'error': str(e)}, to=sid)
 
+@sio.on('speech_input')
+async def handle_speech_input(sid, data):
+    """Handle speech input via WebSocket"""
+    try:
+        print(f"🎤 Speech input from {sid}")
+        
+        # Decode base64 audio data
+        audio_data = base64.b64decode(data['audio_data'])
+        language = data.get('language', 'en')
+        
+        # Process speech input
+        result = await speech_service.process_speech_input(audio_data, language)
+        
+        await sio.emit('speech_input_response', result, to=sid)
+        
+    except Exception as e:
+        print(f"❌ Speech input error: {e}")
+        await sio.emit('speech_input_error', {'error': str(e)}, to=sid)
+
+@sio.on('speech_output')
+async def handle_speech_output(sid, data):
+    """Handle speech output request via WebSocket"""
+    try:
+        print(f"🔊 Speech output request from {sid}")
+        
+        text = data['text']
+        language = data.get('language', 'en')
+        voice_type = data.get('voice_type', 'neural')
+        
+        # Generate speech
+        audio_url = await speech_service.synthesize_speech(text, language, voice_type)
+        
+        if audio_url:
+            await sio.emit('speech_output_response', {
+                'success': True,
+                'audio_url': audio_url
+            }, to=sid)
+        else:
+            await sio.emit('speech_output_error', {
+                'error': 'Failed to synthesize speech'
+            }, to=sid)
+            
+    except Exception as e:
+        print(f"❌ Speech output error: {e}")
+        await sio.emit('speech_output_error', {'error': str(e)}, to=sid)
+
 @sio.on('generate_universe')
 async def handle_generate_universe(sid, data):
     """Handle universe generation via WebSocket"""
@@ -361,26 +516,31 @@ async def handle_generate_universe(sid, data):
         request = UniverseGenerationRequest(**data)
         generated_universe = await llama_service.generate_universe(request)
         
-        # Generate textures for each object
+        # Generate textures for each object (if available)
         objects_with_textures = []
         for obj in generated_universe.objects:
             obj_dict = obj.dict()
             
-            # Determine planet type
-            planet_type = "star" if obj.type == "star" else \
-                        "gas" if obj.info.atmosphere and "Hydrogen" in obj.info.atmosphere else \
-                        "ice" if obj.info.temp and int(obj.info.temp.replace("K", "").strip()) < 200 else \
-                        "terrestrial" if obj.info.atmosphere and "Oxygen" in obj.info.atmosphere else "rocky"
+            if texture_generator:
+                try:
+                    # Determine planet type
+                    planet_type = "star" if obj.type == "star" else \
+                                "gas" if obj.info.atmosphere and "Hydrogen" in obj.info.atmosphere else \
+                                "ice" if obj.info.temp and int(obj.info.temp.replace("K", "").strip()) < 200 else \
+                                "terrestrial" if obj.info.atmosphere and "Oxygen" in obj.info.atmosphere else "rocky"
+                    
+                    # Generate texture
+                    texture_data = texture_generator.generate_texture(
+                        planet_type=planet_type,
+                        base_color=obj.color,
+                        name=obj.name,
+                        temperature=int(obj.info.temp.replace("K", "").strip()) if obj.info.temp else None
+                    )
+                    
+                    obj_dict["generatedTextures"] = texture_data
+                except Exception as tex_error:
+                    print(f"⚠️ Failed to generate texture for {obj.name}: {tex_error}")
             
-            # Generate texture
-            texture_data = texture_generator.generate_texture(
-                planet_type=planet_type,
-                base_color=obj.color,
-                name=obj.name,
-                temperature=int(obj.info.temp.replace("K", "").strip()) if obj.info.temp else None
-            )
-            
-            obj_dict["generatedTextures"] = texture_data
             objects_with_textures.append(obj_dict)
         
         # Cache it
