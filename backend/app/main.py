@@ -139,15 +139,62 @@ async def get_universe_templates():
         ]
     }
 
-@app.post("/test-post")
-async def test_post(data: dict):
-    """Test endpoint to verify POST requests work"""
-    return {"message": "POST request received", "data": data}
+@app.get("/debug/check-env")
+async def check_environment():
+    """Debug endpoint to check environment setup"""
+    api_key = os.getenv("LLAMA_API_KEY", "")
+    return {
+        "has_api_key": bool(api_key),
+        "api_key_length": len(api_key),
+        "api_key_preview": f"{api_key[:10]}..." if api_key else "NOT SET",
+        "env_vars": list(os.environ.keys())
+    }
 
 @app.post("/test-narration")
 async def test_narration(request: NarrationRequest):
     response = await llama_service.generate_narration(request)
     return response
+
+@app.get("/test-llama")
+async def test_llama():
+    """Test endpoint to verify Llama API is working"""
+    try:
+        # Try different test prompts
+        test_prompts = [
+            "What is 2+2? Answer with just the number.",
+            "Complete this sentence: The capital of France is",
+            "Say 'Hello World'"
+        ]
+        
+        results = []
+        for test_prompt in test_prompts:
+            try:
+                system_prompt = "You are a helpful assistant. Answer concisely."
+                response = await llama_service._call_llama_api(test_prompt, max_tokens=50, system_prompt=system_prompt)
+                results.append({
+                    "prompt": test_prompt,
+                    "response": response,
+                    "success": bool(response)
+                })
+            except Exception as e:
+                results.append({
+                    "prompt": test_prompt,
+                    "response": None,
+                    "error": str(e)
+                })
+        
+        return {
+            "status": "success",
+            "model": "Llama-4-Maverick-17B-128E-Instruct-FP8",
+            "results": results
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
 
 # Socket.IO Event Handlers
 @sio.event
