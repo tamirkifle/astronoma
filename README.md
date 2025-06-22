@@ -1,7 +1,10 @@
 # Astronoma - AI-Powered Universe Explorer
+![App Screenshot](Banner.png)
 
-Explore the cosmos with Llama 4-powered narration and intelligent chat assistance.
 
+
+
+Explore the cosmos with Llama 4-powered narration and intelligent Chat assistance.
 ## Quick Start
 
 ### Prerequisites
