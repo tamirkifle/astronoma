@@ -257,7 +257,7 @@ class LlamaService:
             text = f"This is {request.objectId}, a magnificent celestial body in our solar system."
             
             # Uncomment to use real Llama API
-            text = await self._generate_with_llama(request)
+            # text = await self._generate_with_llama(request)
         
         return NarrationResponse(
             objectId=request.objectId,
