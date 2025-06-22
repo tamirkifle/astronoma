@@ -1,4 +1,4 @@
-# Astronomia - AI-Powered Universe Explorer
+# Astronoma - AI-Powered Universe Explorer
 <img align="right" alt="Coding" width="400" src="https://github.com/ISAACRITHARSON/Astronoma/blob/main/Banner.png">
 Explore the cosmos with Llama 4-powered narration and intelligent chat assistance.
 
