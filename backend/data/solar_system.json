@@ -1,0 +1,139 @@
+{
+  "objects": [
+    {
+      "id": "sun",
+      "name": "Sun",
+      "type": "star",
+      "position": [0, 0, 0],
+      "size": 3,
+      "color": "#FDB813",
+      "info": {
+        "distance": "0 AU",
+        "temp": "5,778 K",
+        "magnitude": "-26.74"
+      },
+      "narrationPrompt": "Generate an awe-inspiring narration about the Sun"
+    },
+    {
+      "id": "mercury",
+      "name": "Mercury",
+      "type": "planet",
+      "position": [6, 0, 0],
+      "size": 0.4,
+      "color": "#8C7853",
+      "info": {
+        "distance": "0.39 AU",
+        "temp": "440 K",
+        "moons": 0
+      },
+      "narrationPrompt": "Describe Mercury's extreme conditions"
+    },
+    {
+      "id": "venus",
+      "name": "Venus",
+      "type": "planet",
+      "position": [10, 0, 2],
+      "size": 0.9,
+      "color": "#FFC649",
+      "info": {
+        "distance": "0.72 AU",
+        "temp": "737 K",
+        "atmosphere": "Carbon Dioxide",
+        "moons": 0
+      },
+      "narrationPrompt": "Explain Venus's greenhouse effect"
+    },
+    {
+      "id": "earth",
+      "name": "Earth",
+      "type": "planet",
+      "position": [15, 0, 0],
+      "size": 1,
+      "color": "#4169E1",
+      "texture": "earth",
+      "info": {
+        "distance": "1 AU",
+        "temp": "288 K",
+        "moons": 1,
+        "atmosphere": "Nitrogen, Oxygen"
+      },
+      "narrationPrompt": "Tell the story of Earth as our home"
+    },
+    {
+      "id": "mars",
+      "name": "Mars",
+      "type": "planet",
+      "position": [20, 0, -3],
+      "size": 0.6,
+      "color": "#CD5C5C",
+      "texture": "mars",
+      "info": {
+        "distance": "1.52 AU",
+        "temp": "210 K",
+        "moons": 2,
+        "atmosphere": "Carbon Dioxide"
+      },
+      "narrationPrompt": "Describe Mars and its potential for life"
+    },
+    {
+      "id": "jupiter",
+      "name": "Jupiter",
+      "type": "planet",
+      "position": [35, 0, 5],
+      "size": 2.5,
+      "color": "#DAA520",
+      "texture": "jupiter",
+      "info": {
+        "distance": "5.2 AU",
+        "temp": "165 K",
+        "moons": 79,
+        "atmosphere": "Hydrogen, Helium"
+      },
+      "narrationPrompt": "Explain Jupiter's role as the solar system's guardian"
+    },
+    {
+      "id": "saturn",
+      "name": "Saturn",
+      "type": "planet",
+      "position": [50, 0, -8],
+      "size": 2.2,
+      "color": "#F4A460",
+      "texture": "saturn",
+      "info": {
+        "distance": "9.5 AU",
+        "temp": "134 K",
+        "moons": 82,
+        "atmosphere": "Hydrogen, Helium"
+      },
+      "narrationPrompt": "Describe Saturn's magnificent rings"
+    },
+    {
+      "id": "uranus",
+      "name": "Uranus",
+      "type": "planet",
+      "position": [65, 0, 10],
+      "size": 1.5,
+      "color": "#4FD0E0",
+      "info": {
+        "distance": "19.2 AU",
+        "temp": "76 K",
+        "moons": 27
+      },
+      "narrationPrompt": "Explain Uranus's unique tilt"
+    },
+    {
+      "id": "neptune",
+      "name": "Neptune",
+      "type": "planet",
+      "position": [80, 0, -5],
+      "size": 1.5,
+      "color": "#4169E1",
+      "info": {
+        "distance": "30.1 AU",
+        "temp": "72 K",
+        "moons": 14
+      },
+      "narrationPrompt": "Describe Neptune's fierce winds"
+    }
+  ]
+}
