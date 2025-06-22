@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ViewState, NavigationAction } from '../types/interfaces';
+import { ViewState, NavigationAction, GenerateUniverseAction } from '../types/interfaces';
 import { apiClient } from '../services/api';
 
 interface ChatInterfaceProps {
   currentView: ViewState;
   onNavigate: (action: NavigationAction) => void;
+  onGenerateUniverse?: (universeType: string) => void;
 }
 
 interface Message {
@@ -13,7 +14,7 @@ interface Message {
   text: string;
 }
 
-export function ChatInterface({ currentView, onNavigate }: ChatInterfaceProps) {
+export function ChatInterface({ currentView, onNavigate, onGenerateUniverse }: ChatInterfaceProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -46,7 +47,12 @@ export function ChatInterface({ currentView, onNavigate }: ChatInterfaceProps) {
       setMessages(prev => [...prev, { role: 'assistant', text: response.text }]);
 
       if (response.action) {
-        onNavigate(response.action);
+        if (response.action.type === 'navigate') {
+          onNavigate(response.action as NavigationAction);
+        } else if (response.action.type === 'generate_universe' && onGenerateUniverse) {
+          const action = response.action as GenerateUniverseAction;
+          onGenerateUniverse(action.universe_type);
+        }
       }
     } catch (error) {
       console.error('Chat error:', error);
@@ -94,7 +100,10 @@ export function ChatInterface({ currentView, onNavigate }: ChatInterfaceProps) {
             <div className="flex-1 overflow-y-auto p-5 space-y-3 custom-scrollbar">
               {messages.length === 0 && (
                 <div className="text-center text-white/40 text-sm mt-8">
-                  Try asking "Take me to Mars" or "What's the largest planet?"
+                  <p>Try asking:</p>
+                  <p className="mt-2">"Take me to Mars"</p>
+                  <p>"Show me the Star Wars universe"</p>
+                  <p>"Create an alien solar system"</p>
                 </div>
               )}
               {messages.map((msg, i) => (

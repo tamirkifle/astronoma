@@ -27,6 +27,13 @@ function App() {
   const [generating, setGenerating] = useState(false);
   const [currentUniverse, setCurrentUniverse] = useState<GeneratedUniverse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [availableUniverses, setAvailableUniverses] = useState<string[]>([
+    'solar-system',
+    'exoplanet-system',
+    'binary-system',
+    'galaxy-core',
+    'fictional'
+  ]);
 
   useEffect(() => {
     // Try to generate a universe, fallback to static if fails
@@ -127,6 +134,11 @@ function App() {
   };
 
   const handleUniverseChange = async (type: string) => {
+    // Add dynamic universe types if not already in list
+    if (!availableUniverses.includes(type)) {
+      setAvailableUniverses(prev => [...prev, type]);
+    }
+    
     setSelectedObject(null);
     setViewState(initialViewState);
     await loadUniverse(type);
@@ -203,11 +215,13 @@ function App() {
               className="glass px-4 py-2 rounded-lg text-white bg-transparent outline-none cursor-pointer"
               disabled={generating}
             >
-              <option value="solar-system" className="bg-gray-800">Our Solar System</option>
-              <option value="exoplanet-system" className="bg-gray-800">Exoplanet System</option>
-              <option value="binary-system" className="bg-gray-800">Binary Star System</option>
-              <option value="galaxy-core" className="bg-gray-800">Galaxy Core</option>
-              <option value="fictional" className="bg-gray-800">Fictional Universe</option>
+              {availableUniverses.map(universeType => (
+                <option key={universeType} value={universeType} className="bg-gray-800">
+                  {universeType.split('-').map(word => 
+                    word.charAt(0).toUpperCase() + word.slice(1)
+                  ).join(' ')}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -232,6 +246,7 @@ function App() {
           <ChatInterface 
             currentView={viewState}
             onNavigate={handleNavigate}
+            onGenerateUniverse={handleUniverseChange}
           />
         </div>
 

@@ -257,12 +257,13 @@ Guidelines for {request.universe_type}:
 - Mix of terrestrial and gas giant planets
 - Creative names inspired by the star's characteristics
 """
-        elif request.universe_type == "binary-system":
+        elif request.universe_type == "star-wars":
             base_prompt += """
-- Two stars orbiting each other at position [0,0,0]
-- 4-8 planets with complex orbits
-- Show how binary stars affect planetary conditions
-- Include planets in stable orbits (P-type or S-type)
+- Create a Star Wars inspired system with fictional planets
+- Include iconic locations like Tatooine (binary stars), Hoth (ice planet), Coruscant (city planet)
+- Use creative names and descriptions fitting the Star Wars universe
+- Make it feel epic and cinematic
+- Include diverse planet types (desert, ice, forest, volcanic)
 """
         
         base_prompt += """
@@ -334,30 +335,53 @@ Maintain the poetic, awe-inspiring tone while ensuring scientific accuracy."""
         
         # System prompt for chat
         system_prompt = """You are an intelligent space exploration assistant in a 3D universe visualization app.
-Your role is to help users navigate the universe and answer their questions about space.
 
-When responding:
-1. If the user wants to navigate somewhere, include a navigation action
-2. If they're asking a question, provide an informative answer
-3. Always be helpful and encourage exploration
+You can:
+1. Navigate to existing celestial objects
+2. Generate new universes based on user requests
+3. Answer questions about space
 
-Respond in valid JSON format only."""
+When the user asks to go to a fictional universe, different solar system, or wants to explore something new, you should generate it.
+
+IMPORTANT: Respond with ONLY valid JSON, no markdown formatting, no extra text."""
         
         # Build the user prompt
-        prompt = f"""User's current view: {json.dumps(message.currentView.__dict__)}
-User's message: "{message.message}"
+        prompt = f"""User's message: "{message.message}"
 
-Available celestial objects: {self.universe_context}
+Current universe contains: Sun, Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune
 
-Respond in this JSON format:
+Analyze the user's intent:
+- If they want to go to an existing object (like Mars), use navigate action
+- If they want a different universe (Star Wars, Andromeda, exoplanets, etc.), use generate_universe action
+- If asking a question, just respond with text
+
+Examples:
+- "Go to Mars" -> navigate to mars
+- "Take me to Star Wars universe" -> generate_universe with type "star-wars"
+- "Show me an alien solar system" -> generate_universe with type "exoplanet-system"
+- "I want to see Tatooine" -> generate_universe with type "star-wars"
+
+Respond in this exact JSON format:
 {{
-    "text": "Your response to the user",
+    "text": "Your response",
     "action": {{
         "type": "navigate",
         "targetId": "object_id",
         "duration": 2000
-    }} // Only include if user wants to navigate
-}}"""
+    }}
+}}
+
+OR for universe generation:
+{{
+    "text": "Your response",
+    "action": {{
+        "type": "generate_universe",
+        "universe_type": "universe-type-id",
+        "parameters": {{}}
+    }}
+}}
+
+Universe types available: solar-system, exoplanet-system, binary-system, galaxy-core, fictional, star-wars"""
 
         try:
             # Call Llama API
@@ -365,9 +389,19 @@ Respond in this JSON format:
             
             # Try to parse JSON response
             try:
-                response_data = json.loads(response_text)
+                # Sometimes Llama returns JSON with markdown formatting
+                json_str = response_text.strip()
+                if json_str.startswith('```json'):
+                    json_str = json_str[7:]  # Remove ```json
+                if json_str.endswith('```'):
+                    json_str = json_str[:-3]  # Remove ```
+                json_str = json_str.strip()
+                
+                response_data = json.loads(json_str)
                 return ChatResponse(**response_data)
-            except:
+            except Exception as e:
+                print(f"⚠️ Failed to parse JSON response: {e}")
+                print(f"Raw response: {response_text}")
                 # If JSON parsing fails, return as plain text response
                 return ChatResponse(text=response_text.strip())
                 

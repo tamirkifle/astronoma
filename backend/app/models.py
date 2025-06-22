@@ -1,4 +1,4 @@
-from typing import List, Optional, Literal, Dict, Any
+from typing import List, Optional, Literal, Dict, Any, Union
 from pydantic import BaseModel
 
 class ObjectInfo(BaseModel):
@@ -39,6 +39,11 @@ class NavigationAction(BaseModel):
     targetId: str
     duration: int = 2000
 
+class GenerateUniverseAction(BaseModel):
+    type: Literal['generate_universe']
+    universe_type: str
+    parameters: Optional[Dict[str, Any]] = None
+
 class ChatMessage(BaseModel):
     message: str
     currentView: ViewState
@@ -46,14 +51,14 @@ class ChatMessage(BaseModel):
 
 class ChatResponse(BaseModel):
     text: str
-    action: Optional[NavigationAction] = None
+    action: Optional[Union[NavigationAction, GenerateUniverseAction]] = None
 
 class UniverseData(BaseModel):
     objects: List[CelestialObject]
 
-# New models for universe generation
+# Universe generation models
 class UniverseGenerationRequest(BaseModel):
-    universe_type: Literal['solar-system', 'exoplanet-system', 'galaxy-core', 'fictional', 'binary-system']
+    universe_type: str  # Allow any string for dynamic universe types
     parameters: Optional[Dict[str, Any]] = None
     
 class UniverseGenerationParameters(BaseModel):

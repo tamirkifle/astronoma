@@ -36,15 +36,21 @@ export interface ChatMessage {
   timestamp: number;
 }
 
-export interface ChatResponse {
-  text: string;
-  action?: NavigationAction;
-}
-
 export interface NavigationAction {
   type: 'navigate';
   targetId: string;
   duration: number;
+}
+
+export interface GenerateUniverseAction {
+  type: 'generate_universe';
+  universe_type: string;
+  parameters?: Record<string, any>;
+}
+
+export interface ChatResponse {
+  text: string;
+  action?: NavigationAction | GenerateUniverseAction;
 }
 
 export interface ViewState {
@@ -53,9 +59,9 @@ export interface ViewState {
   selectedObjectId?: string;
 }
 
-// New universe generation types
+// Universe generation types
 export interface UniverseGenerationRequest {
-  universe_type: 'solar-system' | 'exoplanet-system' | 'galaxy-core' | 'fictional' | 'binary-system';
+  universe_type: 'solar-system' | 'exoplanet-system' | 'galaxy-core' | 'fictional' | 'binary-system' | string;
   parameters?: UniverseGenerationParameters;
 }
 
