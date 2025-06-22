@@ -1,12 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ViewState, NavigationAction, GenerateUniverseAction } from '../types/interfaces';
+import { 
+  ViewState, 
+  NavigationAction, 
+  GenerateUniverseAction,
+  CelestialObject,
+  GeneratedUniverse 
+} from '../types/interfaces';
 import { apiClient } from '../services/api';
 
 interface ChatInterfaceProps {
   currentView: ViewState;
   onNavigate: (action: NavigationAction) => void;
   onGenerateUniverse?: (universeType: string) => void;
+  currentUniverse?: GeneratedUniverse | null;
+  objects: CelestialObject[];
 }
 
 interface Message {
@@ -14,7 +22,13 @@ interface Message {
   text: string;
 }
 
-export function ChatInterface({ currentView, onNavigate, onGenerateUniverse }: ChatInterfaceProps) {
+export function ChatInterface({ 
+  currentView, 
+  onNavigate, 
+  onGenerateUniverse,
+  currentUniverse,
+  objects 
+}: ChatInterfaceProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -38,10 +52,24 @@ export function ChatInterface({ currentView, onNavigate, onGenerateUniverse }: C
     setIsLoading(true);
 
     try {
+      // Build universe context from current objects
+      const universeContext = {
+        universeName: currentUniverse?.name || 'Unknown Universe',
+        universeType: currentUniverse?.type || 'unknown',
+        objects: objects.map(obj => ({
+          id: obj.id,
+          name: obj.name,
+          type: obj.type
+        }))
+      };
+
+      console.log('📍 Sending chat with universe context:', universeContext);
+
       const response = await apiClient.sendChatMessage({
         message: userMessage,
         currentView,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        universeContext
       });
 
       setMessages(prev => [...prev, { role: 'assistant', text: response.text }]);
@@ -99,7 +127,9 @@ export function ChatInterface({ currentView, onNavigate, onGenerateUniverse }: C
             {/* Header */}
             <div className="p-5 border-b border-white/10">
               <h3 className="text-lg font-light text-white">Space Assistant</h3>
-              <p className="text-white/60 text-sm">Ask me anything about the universe</p>
+              <p className="text-white/60 text-sm">
+                Exploring: {currentUniverse?.name || 'Unknown Universe'}
+              </p>
             </div>
 
             {/* Messages */}
@@ -107,9 +137,9 @@ export function ChatInterface({ currentView, onNavigate, onGenerateUniverse }: C
               {messages.length === 0 && (
                 <div className="text-center text-white/40 text-sm mt-8">
                   <p>Try asking:</p>
-                  <p className="mt-2">"Take me to Mars"</p>
-                  <p>"Show me the Star Wars universe"</p>
-                  <p>"Create an alien solar system"</p>
+                  <p className="mt-2">"What planets are here?"</p>
+                  <p>"Take me to the largest object"</p>
+                  <p>"What's special about this universe?"</p>
                 </div>
               )}
               {messages.map((msg, i) => (
@@ -149,7 +179,7 @@ export function ChatInterface({ currentView, onNavigate, onGenerateUniverse }: C
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask about planets, stars..."
+                  placeholder="Ask about this universe..."
                   className="flex-1 px-4 py-3 bg-white/10 rounded-full text-white placeholder-white/40 
                            outline-none focus:bg-white/15 transition-colors"
                   disabled={isLoading}

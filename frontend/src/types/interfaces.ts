@@ -34,6 +34,15 @@ export interface ChatMessage {
   message: string;
   currentView: ViewState;
   timestamp: number;
+  universeContext?: {
+    universeName: string;
+    universeType: string;
+    objects: Array<{
+      id: string;
+      name: string;
+      type: string;
+    }>;
+  };
 }
 
 export interface NavigationAction {

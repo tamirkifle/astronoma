@@ -7,12 +7,12 @@ class ObjectInfo(BaseModel):
     moons: Optional[int] = None
     atmosphere: Optional[str] = None
     magnitude: Optional[str] = None
-    interesting_fact: Optional[str] = None  # New field for AI-generated facts
+    interesting_fact: Optional[str] = None
 
 class CelestialObject(BaseModel):
     id: str
     name: str
-    type: Literal['planet', 'star', 'moon', 'asteroid', 'comet', 'black_hole', 'nebula']  # Extended types
+    type: Literal['planet', 'star', 'moon', 'asteroid', 'comet', 'black_hole', 'nebula']
     position: List[float]  # [x, y, z]
     size: float
     color: str
@@ -44,10 +44,22 @@ class GenerateUniverseAction(BaseModel):
     universe_type: str
     parameters: Optional[Dict[str, Any]] = None
 
+# Universe context for chat
+class UniverseContextObject(BaseModel):
+    id: str
+    name: str
+    type: str
+
+class UniverseContext(BaseModel):
+    universeName: str
+    universeType: str
+    objects: List[UniverseContextObject]
+
 class ChatMessage(BaseModel):
     message: str
     currentView: ViewState
     timestamp: int
+    universeContext: Optional[UniverseContext] = None
 
 class ChatResponse(BaseModel):
     text: str
@@ -65,8 +77,8 @@ class UniverseGenerationParameters(BaseModel):
     size: Literal['small', 'medium', 'large'] = 'medium'
     complexity: Literal['simple', 'moderate', 'complex'] = 'moderate'
     style: Literal['realistic', 'educational', 'fantastical'] = 'realistic'
-    theme: Optional[str] = None  # e.g., "ice worlds", "desert planets"
-    num_objects: Optional[int] = None  # Override default count
+    theme: Optional[str] = None
+    num_objects: Optional[int] = None
 
 class GeneratedUniverse(BaseModel):
     id: str
@@ -74,5 +86,5 @@ class GeneratedUniverse(BaseModel):
     name: str
     description: str
     objects: List[CelestialObject]
-    generated_at: int  # Timestamp
+    generated_at: int
     parameters_used: Dict[str, Any]

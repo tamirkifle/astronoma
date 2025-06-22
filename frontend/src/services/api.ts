@@ -94,7 +94,7 @@ class APIClient {
     });
   }
 
-  sendChatMessage(message: ChatMessage): Promise<ChatResponse> {
+  sendChatMessage(message: ChatMessage & { universe_id?: string }): Promise<ChatResponse> {
     return new Promise((resolve, reject) => {
       this.socket.emit('chat_message', message);
       

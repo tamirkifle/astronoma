@@ -139,17 +139,6 @@ async def get_universe_templates():
         ]
     }
 
-@app.get("/debug/check-env")
-async def check_environment():
-    """Debug endpoint to check environment setup"""
-    api_key = os.getenv("LLAMA_API_KEY", "")
-    return {
-        "has_api_key": bool(api_key),
-        "api_key_length": len(api_key),
-        "api_key_preview": f"{api_key[:10]}..." if api_key else "NOT SET",
-        "env_vars": list(os.environ.keys())
-    }
-
 @app.post("/test-narration")
 async def test_narration(request: NarrationRequest):
     response = await llama_service.generate_narration(request)
@@ -196,6 +185,17 @@ async def test_llama():
             "traceback": traceback.format_exc()
         }
 
+@app.get("/debug/check-env")
+async def check_environment():
+    """Debug endpoint to check environment setup"""
+    api_key = os.getenv("LLAMA_API_KEY", "")
+    return {
+        "has_api_key": bool(api_key),
+        "api_key_length": len(api_key),
+        "api_key_preview": f"{api_key[:10]}..." if api_key else "NOT SET",
+        "env_vars": list(os.environ.keys())
+    }
+
 # Socket.IO Event Handlers
 @sio.event
 async def connect(sid, environ):
@@ -220,14 +220,23 @@ async def request_narration(sid, data):
 
 @sio.on('chat_message')
 async def handle_chat_message(sid, data):
-    print("✅ Received chat_message:", data)
+    """Handle chat messages - sid is automatically passed by socketio"""
+    print("✅ Received chat_message from", sid)
+    print("📦 Chat data:", data)
 
     try:
+        # Parse the chat message
         message = ChatMessage(**data)
+        
+        # Call the llama service (it only needs the message, not the sid)
         response = await llama_service.handle_chat(message)
+        
+        # Send response back to the client
         await sio.emit('chat_response', response.dict(), to=sid)
     except Exception as e:
         print("❌ Error processing chat_message:", e)
+        import traceback
+        traceback.print_exc()
         await sio.emit('chat_error', {'error': str(e)}, to=sid)
 
 @sio.on('generate_universe')

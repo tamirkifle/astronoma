@@ -251,12 +251,14 @@ function App() {
           </div>
         )}
 
-        {/* Chat Interface */}
+        {/* Chat Interface - Now with universe context */}
         <div className="absolute bottom-8 right-8 pointer-events-auto">
           <ChatInterface 
             currentView={viewState}
             onNavigate={handleNavigate}
             onGenerateUniverse={handleUniverseChange}
+            currentUniverse={currentUniverse}
+            objects={objects}
           />
         </div>
 
