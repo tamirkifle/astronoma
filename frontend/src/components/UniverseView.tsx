@@ -1,8 +1,10 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Stars } from '@react-three/drei';
 import * as THREE from 'three';
 import { CelestialObject, ViewState } from '../types/interfaces';
+import { textureLoader, TextureSet } from '../services/textureLoader';
+import { textureService } from '../services/textureService';
 
 interface UniverseViewProps {
   objects: CelestialObject[];
@@ -21,53 +23,94 @@ interface PlanetProps {
 function Planet({ object, onClick, isSelected }: PlanetProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = React.useState(false);
+  const [textures, setTextures] = useState<TextureSet>({});
+  const [loading, setLoading] = useState(true);
+
+  // Load textures
+  useEffect(() => {
+    // Immediately set procedural textures
+    if (object.type === 'star') {
+      setTextures({
+        map: textureLoader.createStarTexture(),
+        emissiveMap: textureLoader.createStarTexture()
+      });
+    } else {
+      const proceduralType = object.info.temp && parseInt(object.info.temp.replace(/[^\d]/g, '')) < 200 ? 'ice' :
+                           object.type === 'planet' && object.info.atmosphere?.includes('Hydrogen') ? 'gas' : 
+                           'rocky';
+      
+      setTextures({
+        map: textureLoader.generateProceduralTexture(object.color, proceduralType)
+      });
+    }
+    setLoading(false);
+
+    // Then try to load better textures in the background
+    const loadBetterTextures = async () => {
+      try {
+        // Check for cached backend textures
+        let textureData = textureService.getTextureData(object.id);
+        
+        if (!textureData) {
+          // Load from backend asynchronously
+          textureData = await textureService.loadTextureForObject(object);
+        }
+        
+        if (textureData) {
+          const loadedTextures = textureLoader.loadFromGeneratedData(textureData);
+          setTextures(loadedTextures);
+        }
+      } catch (err) {
+        console.warn(`Background texture loading failed for ${object.name}:`, err);
+        // Keep using procedural textures
+      }
+    };
+
+    loadBetterTextures();
+  }, [object]);
 
   useFrame((state) => {
     if (meshRef.current) {
+      // Rotation
       meshRef.current.rotation.y += 0.001;
       
       // Pulse effect for selected planet
       if (isSelected) {
         const scale = 1 + Math.sin(state.clock.elapsedTime * 2) * 0.05;
-        meshRef.current.scale.setScalar(scale);
+        meshRef.current.scale.setScalar(scale * object.size);
       } else {
-        meshRef.current.scale.setScalar(hovered ? 1.1 : 1);
+        meshRef.current.scale.setScalar((hovered ? 1.1 : 1) * object.size);
       }
     }
   });
 
-  // Create texture based on planet type
-  const getTexture = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d')!;
-    
-    // Simple gradient for planets
-    const gradient = ctx.createLinearGradient(0, 0, 512, 0);
-    
-    if (object.id === 'earth') {
-      gradient.addColorStop(0, '#4169E1');
-      gradient.addColorStop(0.5, '#87CEEB');
-      gradient.addColorStop(1, '#4169E1');
-    } else if (object.id === 'mars') {
-      gradient.addColorStop(0, '#CD5C5C');
-      gradient.addColorStop(0.5, '#E25822');
-      gradient.addColorStop(1, '#8B4513');
-    } else if (object.id === 'jupiter') {
-      for (let i = 0; i < 10; i++) {
-        const color = i % 2 === 0 ? '#DAA520' : '#D2691E';
-        gradient.addColorStop(i / 10, color);
-      }
+  // Create material based on object type
+  const createMaterial = () => {
+    if (object.type === 'star') {
+      // Stars use basic material with emissive properties
+      return (
+        <meshBasicMaterial 
+          map={textures.map || undefined}
+          color={object.color}
+        />
+      );
     } else {
-      gradient.addColorStop(0, object.color);
-      gradient.addColorStop(1, object.color);
+      // Planets use phong material with enhanced brightness
+      return (
+        <meshPhongMaterial 
+          map={textures.map || undefined}
+          normalMap={textures.normalMap || undefined}
+          bumpMap={textures.bumpMap || undefined}
+          bumpScale={textures.bumpMap ? 0.05 : 0}
+          specularMap={textures.specularMap || undefined}
+          color={object.color}
+          emissive={new THREE.Color(object.color)}
+          emissiveIntensity={0.05}
+          shininess={30}
+          specular={new THREE.Color(0x222222)}
+        />
+      );
     }
-    
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 512, 256);
-    
-    return new THREE.CanvasTexture(canvas);
   };
 
   return (
@@ -81,35 +124,69 @@ function Planet({ object, onClick, isSelected }: PlanetProps) {
         }}
         onPointerOver={() => setHovered(true)}
         onPointerOut={() => setHovered(false)}
+        scale={object.size}
       >
-        <sphereGeometry args={[object.size, 32, 32]} />
-        <meshPhongMaterial 
-          map={getTexture()}
-          emissive={new THREE.Color(object.color)}
-          emissiveIntensity={object.type === 'star' ? 0.5 : 0.1}
-        />
+        <sphereGeometry args={[1, 64, 64]} />
+        {loading ? (
+          <meshBasicMaterial color={object.color} />
+        ) : (
+          createMaterial()
+        )}
       </mesh>
       
-      {/* Glow effect */}
-      <mesh scale={[1.2, 1.2, 1.2]}>
-        <sphereGeometry args={[object.size, 32, 32]} />
-        <meshBasicMaterial
-          color={object.color}
-          transparent
-          opacity={0.1}
-          side={THREE.BackSide}
-        />
-      </mesh>
+      {/* Atmosphere (if applicable) */}
+      {object.atmosphereColor && (
+        <mesh scale={object.size * 1.1}>
+          <sphereGeometry args={[1, 64, 64]} />
+          <meshBasicMaterial
+            color={object.atmosphereColor}
+            transparent
+            opacity={object.atmosphereDensity || 0.3}
+            side={THREE.BackSide}
+          />
+        </mesh>
+      )}
       
-      {/* Saturn's rings */}
-      {object.id === 'saturn' && (
-        <mesh rotation={[Math.PI / 2.2, 0, 0]}>
-          <ringGeometry args={[object.size * 1.5, object.size * 2.5, 64]} />
+      {/* Ring system */}
+      {object.ringSystem && (
+        <mesh rotation={[Math.PI / 2.2, 0, 0]} scale={object.size}>
+          <ringGeometry args={[
+            object.ringSystem.innerRadius,
+            object.ringSystem.outerRadius,
+            64,
+            8
+          ]} />
           <meshBasicMaterial 
-            color="#F4A460" 
+            color={object.ringSystem.color}
             side={THREE.DoubleSide}
             transparent
-            opacity={0.8}
+            opacity={object.ringSystem.opacity}
+          />
+        </mesh>
+      )}
+      
+      {/* Selection glow effect */}
+      {isSelected && (
+        <mesh scale={object.size * 1.15}>
+          <sphereGeometry args={[1, 32, 32]} />
+          <meshBasicMaterial
+            color={object.color}
+            transparent
+            opacity={0.3}
+            side={THREE.BackSide}
+          />
+        </mesh>
+      )}
+      
+      {/* Hover glow */}
+      {hovered && !isSelected && (
+        <mesh scale={object.size * 1.2}>
+          <sphereGeometry args={[1, 32, 32]} />
+          <meshBasicMaterial
+            color="#ffffff"
+            transparent
+            opacity={0.1}
+            side={THREE.BackSide}
           />
         </mesh>
       )}
@@ -153,6 +230,27 @@ function CameraController({ selectedObjectId, objects }: { selectedObjectId?: st
   return null;
 }
 
+// Skybox component for better space environment
+function SpaceSkybox() {
+  const { scene } = useThree();
+  
+  useEffect(() => {
+    // For now, just set a dark space background
+    // We'll implement proper skybox in commit 3
+    scene.background = new THREE.Color(0x000011);
+    
+    // Add some fog for depth
+    scene.fog = new THREE.Fog(0x000011, 100, 500);
+    
+    return () => {
+      scene.background = null;
+      scene.fog = null;
+    };
+  }, [scene]);
+  
+  return null;
+}
+
 export function UniverseView({ 
   objects, 
   viewState, 
@@ -167,12 +265,43 @@ export function UniverseView({
         fov: 75 
       }}
       style={{ background: '#000' }}
+      gl={{ 
+        antialias: true,
+        toneMapping: THREE.ACESFilmicToneMapping,
+        toneMappingExposure: 1.0
+      }}
     >
       {/* Lighting */}
-      <ambientLight intensity={0.3} />
-      <pointLight position={[0, 0, 0]} intensity={2} color="#FDB813" />
+      <ambientLight intensity={0.6} />
       
-      {/* Stars background */}
+      {/* Add point lights for each star */}
+      {objects.filter(obj => obj.type === 'star').map(star => (
+        <pointLight 
+          key={star.id}
+          position={star.position} 
+          intensity={3} 
+          color={star.color}
+          distance={300}
+          decay={1.5}
+        />
+      ))}
+      
+      {/* Add a soft directional light for better visibility */}
+      <directionalLight 
+        position={[50, 50, 50]} 
+        intensity={0.5} 
+        color="#ffffff"
+      />
+      
+      {/* Add hemisphere light for natural lighting */}
+      <hemisphereLight 
+        color="#ffffff" 
+        groundColor="#444444" 
+        intensity={0.3} 
+      />
+      
+      {/* Space environment */}
+      <SpaceSkybox />
       <Stars 
         radius={300} 
         depth={50} 
@@ -180,6 +309,7 @@ export function UniverseView({
         factor={4} 
         saturation={0} 
         fade 
+        speed={0.5}
       />
       
       {/* Planets */}
@@ -200,7 +330,9 @@ export function UniverseView({
         zoomSpeed={0.5}
         rotateSpeed={0.5}
         minDistance={5}
-        maxDistance={100}
+        maxDistance={200}
+        autoRotate={false}
+        autoRotateSpeed={0.5}
       />
       
       <CameraController selectedObjectId={selectedObjectId} objects={objects} />

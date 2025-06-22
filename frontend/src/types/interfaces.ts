@@ -6,6 +6,20 @@ export interface CelestialObject {
   size: number;
   color: string;
   texture?: string;
+  textureMap?: string;
+  normalMap?: string;
+  bumpMap?: string;
+  specularMap?: string;
+  emissiveMap?: string;
+  atmosphereColor?: string;
+  atmosphereDensity?: number;
+  ringSystem?: {
+    innerRadius: number;
+    outerRadius: number;
+    texture?: string;
+    color: string;
+    opacity: number;
+  };
   info: ObjectInfo;
   narrationPrompt: string;
 }

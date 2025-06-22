@@ -8,7 +8,8 @@ import hashlib
 from app.models import (
     NarrationRequest, NarrationResponse,
     ChatMessage, ChatResponse, NavigationAction,
-    UniverseGenerationRequest, GeneratedUniverse, CelestialObject
+    UniverseGenerationRequest, GeneratedUniverse, CelestialObject,
+    ObjectInfo, RingSystem
 )
 
 class LlamaService:
@@ -155,6 +156,35 @@ class LlamaService:
             print(f"❌ Error calling Llama API: {e}")
             raise
     
+    def _fix_llama_response(self, obj_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Fix common issues with Llama responses"""
+        # Fix narrationPrompt if it's an array
+        if isinstance(obj_data.get('narrationPrompt'), list):
+            obj_data['narrationPrompt'] = ' '.join(obj_data['narrationPrompt'])
+        
+        # Ensure required fields exist
+        if 'info' not in obj_data:
+            obj_data['info'] = {}
+        
+        info = obj_data['info']
+        
+        # Add missing distance for stars
+        if obj_data.get('type') == 'star' and 'distance' not in info:
+            info['distance'] = '0 AU'
+        
+        # Add missing temp if not present
+        if 'temp' not in info:
+            if obj_data.get('type') == 'star':
+                info['temp'] = '5778 K'
+            else:
+                info['temp'] = '288 K'
+        
+        # Ensure distance exists for non-stars
+        if 'distance' not in info and obj_data.get('type') != 'star':
+            info['distance'] = '1 AU'
+        
+        return obj_data
+    
     async def generate_universe(self, request: UniverseGenerationRequest) -> GeneratedUniverse:
         """Generate a complete universe using Llama API"""
         
@@ -162,9 +192,9 @@ class LlamaService:
         prompt = self._build_universe_generation_prompt(request)
         
         try:
-            # Call Llama API with system prompt
+            # Call Llama API with system prompt - reduced tokens for faster response
             system_prompt = "You are an expert astronomer and universe designer. Generate scientifically accurate but engaging celestial systems. Always respond with valid JSON only, no other text."
-            response_text = await self._call_llama_api(prompt, max_tokens=2000, temperature=0.8, system_prompt=system_prompt)
+            response_text = await self._call_llama_api(prompt, max_tokens=1500, temperature=0.7, system_prompt=system_prompt)
             
             # Try to parse JSON from response
             # Llama might include text before/after JSON, so we need to extract it
@@ -179,7 +209,11 @@ class LlamaService:
                 objects = []
                 for obj_data in universe_data.get('objects', []):
                     try:
-                        obj = CelestialObject(**obj_data)
+                        # Fix common issues
+                        fixed_data = self._fix_llama_response(obj_data)
+                        
+                        # Create the object
+                        obj = CelestialObject(**fixed_data)
                         objects.append(obj)
                     except Exception as e:
                         print(f"⚠️ Skipping invalid object: {e}")
@@ -205,6 +239,8 @@ class LlamaService:
         # Fallback to pre-defined examples
         if request.universe_type == "exoplanet-system":
             return self._generate_example_exoplanet_system(request)
+        elif request.universe_type == "star-wars":
+            return self._generate_star_wars_system(request)
         else:
             return self._generate_default_universe(request)
     
@@ -227,6 +263,15 @@ Return ONLY valid JSON (no other text) in this exact format:
             "position": [x, y, z],
             "size": 0.1 to 5.0,
             "color": "#hexcolor",
+            "texture": "texture_name or null",
+            "atmosphereColor": "#hexcolor or null",
+            "atmosphereDensity": 0.1 to 0.5 or null,
+            "ringSystem": {{
+                "innerRadius": 1.3 to 1.8,
+                "outerRadius": 2.0 to 3.0,
+                "color": "#hexcolor",
+                "opacity": 0.3 to 0.9
+            }} or null,
             "info": {{
                 "distance": "X AU from star",
                 "temp": "X K",
@@ -234,10 +279,17 @@ Return ONLY valid JSON (no other text) in this exact format:
                 "moons": number if applicable,
                 "interesting_fact": "An engaging fact about this object"
             }},
-            "narrationPrompt": "Key points for AI narrator to discuss"
+            "narrationPrompt": "Key points for AI narrator to discuss as a single string"
         }}
     ]
 }}
+
+IMPORTANT: 
+- narrationPrompt must be a single string, not an array
+- All objects must have info.distance and info.temp
+- Stars should have distance "0 AU"
+- Use scientifically accurate colors, temperatures, and atmospheres
+- For fictional universes, use canonical information from the source material
 
 Guidelines for {request.universe_type}:
 """
@@ -245,30 +297,54 @@ Guidelines for {request.universe_type}:
         if request.universe_type == "solar-system":
             base_prompt += """
 - Include our Sun and all 8 planets in correct order
-- Use accurate colors and sizes (relative scale)
+- Use accurate colors: Sun #FDB813, Mercury #8C7853, Venus #FFC649, Earth #4169E1, Mars #CD5C5C, Jupiter #DAA520, Saturn #F4A460, Uranus #4FD0E0, Neptune #4169E1
+- Use accurate temperatures: Sun 5778K, Mercury 440K, Venus 737K, Earth 288K, Mars 210K, Jupiter 165K, Saturn 134K, Uranus 76K, Neptune 72K
 - Position planets at realistic distances
-- Include accurate temperature and atmosphere data
+- Include accurate atmosphere data
 """
         elif request.universe_type == "exoplanet-system":
             base_prompt += """
 - Create a star different from our Sun (red dwarf, binary, etc.)
 - Include 3-6 exoplanets with varied characteristics
-- At least one potentially habitable planet
+- At least one potentially habitable planet (temperature 250-320K)
 - Mix of terrestrial and gas giant planets
-- Creative names inspired by the star's characteristics
+- Use realistic exoplanet names (e.g., HD 209458 b, Kepler-452b style)
+- Accurate stellar temperatures: M-dwarf (2400-3700K), K-dwarf (3700-5200K), G-dwarf (5200-6000K)
 """
         elif request.universe_type == "star-wars":
             base_prompt += """
-- Create a Star Wars inspired system with fictional planets
-- Include iconic locations like Tatooine (binary stars), Hoth (ice planet), Coruscant (city planet)
-- Use creative names and descriptions fitting the Star Wars universe
-- Make it feel epic and cinematic
-- Include diverse planet types (desert, ice, forest, volcanic)
+- Use EXACT Star Wars canon information:
+  - Tatooine: Binary star system (Tatoo I and Tatoo II), desert planet, 304K surface temp, tan/sandy color #F4A460
+  - Hoth: Ice planet, 70K surface temp, white/light blue color #E0FFFF
+  - Dagobah: Swamp planet, 298K surface temp, dark green color #2F4F2F
+  - Coruscant: City planet, 288K surface temp, metallic gray color #708090
+  - Endor: Forest moon orbiting gas giant, 290K surface temp, green color #228B22
+  - Mustafar: Volcanic planet, 800K surface temp, red/orange color #FF4500
+  - Bespin: Gas giant with Cloud City, 120K at altitude, peachy color #FFE4B5
+- Include iconic features (Tatooine's twin suns, Death Star if appropriate)
+- Use Star Wars naming conventions
+"""
+        elif request.universe_type == "binary-system":
+            base_prompt += """
+- Two stars orbiting common center of mass
+- Accurate binary star types: contact binary, detached binary, or semi-detached
+- Planets in S-type orbits (around one star) or P-type orbits (around both)
+- Realistic stellar masses and temperatures for binary pairs
+- Complex day/night cycles for planets
+"""
+        elif request.universe_type == "galaxy-core":
+            base_prompt += """
+- Supermassive black hole at center (Sagittarius A* style)
+- High stellar density near core
+- Ancient stellar populations
+- Extreme radiation environments
+- Possible accretion disk visualization
 """
         
         base_prompt += """
 Ensure all positions spread objects appropriately in 3D space.
-Make it educational and visually interesting for space exploration."""
+Make it educational and visually interesting for space exploration.
+Use your knowledge to make all parameters as accurate as possible."""
         
         return base_prompt
     
@@ -499,57 +575,58 @@ Maintain the poetic, awe-inspiring tone while ensuring scientific accuracy."""
                 return ChatResponse(
                     text=f"I'm having trouble understanding. You're in {universe_name}. Try asking me to go to one of these: {', '.join([obj[1] for obj in universe_objects[:3]])}"
                 )    
+    
     # Keep existing helper methods
     def _generate_example_exoplanet_system(self, request: UniverseGenerationRequest) -> GeneratedUniverse:
         """Generate an example exoplanet system"""
         objects = [
-            {
-                "id": "kepler22",
-                "name": "Kepler-22",
-                "type": "star",
-                "position": [0, 0, 0],
-                "size": 2.8,
-                "color": "#FFD700",
-                "info": {
-                    "distance": "0 AU",
-                    "temp": "5518 K",
-                    "magnitude": "11.7",
-                    "interesting_fact": "Slightly smaller and cooler than our Sun, located 620 light-years away"
-                },
-                "narrationPrompt": "Describe this sun-like star in the constellation Cygnus"
-            },
-            {
-                "id": "kepler22b",
-                "name": "Kepler-22b",
-                "type": "planet",
-                "position": [15, 0, 0],
-                "size": 1.3,
-                "color": "#4682B4",
-                "info": {
-                    "distance": "0.85 AU",
-                    "temp": "295 K",
-                    "atmosphere": "Unknown, possibly water vapor",
-                    "moons": 0,
-                    "interesting_fact": "First confirmed exoplanet in the habitable zone of a sun-like star"
-                },
-                "narrationPrompt": "Explain why this super-Earth might harbor life"
-            },
-            {
-                "id": "kepler22c",
-                "name": "Kepler-22c",
-                "type": "planet",
-                "position": [25, 3, -5],
-                "size": 0.8,
-                "color": "#CD853F",
-                "info": {
-                    "distance": "1.2 AU",
-                    "temp": "250 K",
-                    "atmosphere": "Thin, mostly CO2",
-                    "moons": 0,
-                    "interesting_fact": "A hypothetical rocky world at the edge of the habitable zone"
-                },
-                "narrationPrompt": "Describe this Mars-like world"
-            }
+            CelestialObject(
+                id="kepler22",
+                name="Kepler-22",
+                type="star",
+                position=[0, 0, 0],
+                size=2.8,
+                color="#FFD700",
+                info=ObjectInfo(
+                    distance="0 AU",
+                    temp="5518 K",
+                    magnitude="11.7",
+                    interesting_fact="Slightly smaller and cooler than our Sun, located 620 light-years away"
+                ),
+                narrationPrompt="Describe this sun-like star in the constellation Cygnus"
+            ),
+            CelestialObject(
+                id="kepler22b",
+                name="Kepler-22b",
+                type="planet",
+                position=[15, 0, 0],
+                size=1.3,
+                color="#4682B4",
+                info=ObjectInfo(
+                    distance="0.85 AU",
+                    temp="295 K",
+                    atmosphere="Unknown, possibly water vapor",
+                    moons=0,
+                    interesting_fact="First confirmed exoplanet in the habitable zone of a sun-like star"
+                ),
+                narrationPrompt="Explain why this super-Earth might harbor life"
+            ),
+            CelestialObject(
+                id="kepler22c",
+                name="Kepler-22c",
+                type="planet",
+                position=[25, 3, -5],
+                size=0.8,
+                color="#CD853F",
+                info=ObjectInfo(
+                    distance="1.2 AU",
+                    temp="250 K",
+                    atmosphere="Thin, mostly CO2",
+                    moons=0,
+                    interesting_fact="A hypothetical rocky world at the edge of the habitable zone"
+                ),
+                narrationPrompt="Describe this Mars-like world"
+            )
         ]
         
         return GeneratedUniverse(
@@ -557,7 +634,98 @@ Maintain the poetic, awe-inspiring tone while ensuring scientific accuracy."""
             type=request.universe_type,
             name="Kepler-22 System",
             description="A distant exoplanet system with potentially habitable worlds",
-            objects=[CelestialObject(**obj) for obj in objects],
+            objects=objects,
+            generated_at=int(time.time()),
+            parameters_used=request.parameters or {}
+        )
+    
+    def _generate_star_wars_system(self, request: UniverseGenerationRequest) -> GeneratedUniverse:
+        """Generate a Star Wars themed system"""
+        objects = [
+            CelestialObject(
+                id="tatoo1",
+                name="Tatoo I",
+                type="star",
+                position=[0, 0, 0],
+                size=2.5,
+                color="#FDB813",
+                info=ObjectInfo(
+                    distance="0 AU",
+                    temp="5200 K",
+                    interesting_fact="First sun of the Tatooine binary star system"
+                ),
+                narrationPrompt="The first of Tatooine's twin suns"
+            ),
+            CelestialObject(
+                id="tatoo2",
+                name="Tatoo II",
+                type="star",
+                position=[8, 0, 0],
+                size=2.0,
+                color="#FFD700",
+                info=ObjectInfo(
+                    distance="0.5 AU from Tatoo I",
+                    temp="4800 K",
+                    interesting_fact="Second sun of the Tatooine binary star system"
+                ),
+                narrationPrompt="The second of Tatooine's twin suns"
+            ),
+            CelestialObject(
+                id="tatooine",
+                name="Tatooine",
+                type="planet",
+                position=[20, 0, 0],
+                size=0.9,
+                color="#F4A460",
+                info=ObjectInfo(
+                    distance="1.2 AU",
+                    temp="310 K",
+                    atmosphere="Thin, dry",
+                    moons=3,
+                    interesting_fact="Desert planet, birthplace of Anakin and Luke Skywalker"
+                ),
+                narrationPrompt="A harsh desert world with twin suns, where heroes are born"
+            ),
+            CelestialObject(
+                id="hoth",
+                name="Hoth",
+                type="planet",
+                position=[35, 5, -10],
+                size=1.1,
+                color="#E0FFFF",
+                info=ObjectInfo(
+                    distance="5.2 AU",
+                    temp="120 K",
+                    atmosphere="Thin",
+                    moons=3,
+                    interesting_fact="Ice planet that housed the Rebel Alliance base"
+                ),
+                narrationPrompt="A frozen world of ice and snow"
+            ),
+            CelestialObject(
+                id="dagobah",
+                name="Dagobah",
+                type="planet",
+                position=[30, -8, 5],
+                size=0.8,
+                color="#228B22",
+                info=ObjectInfo(
+                    distance="4.5 AU",
+                    temp="280 K",
+                    atmosphere="Dense, humid",
+                    moons=0,
+                    interesting_fact="Swamp planet where Yoda lived in exile"
+                ),
+                narrationPrompt="A mysterious swamp world strong with the Force"
+            )
+        ]
+        
+        return GeneratedUniverse(
+            id=str(uuid.uuid4()),
+            type=request.universe_type,
+            name="Star Wars System",
+            description="A galaxy far, far away...",
+            objects=objects,
             generated_at=int(time.time()),
             parameters_used=request.parameters or {}
         )
@@ -565,37 +733,37 @@ Maintain the poetic, awe-inspiring tone while ensuring scientific accuracy."""
     def _generate_default_universe(self, request: UniverseGenerationRequest) -> GeneratedUniverse:
         """Generate a default universe when type is not recognized"""
         objects = [
-            {
-                "id": "star1",
-                "name": "Unknown Star",
-                "type": "star",
-                "position": [0, 0, 0],
-                "size": 3,
-                "color": "#FFFF00",
-                "info": {
-                    "distance": "0 AU",
-                    "temp": "5778 K",
-                    "magnitude": "-26.74",
-                    "interesting_fact": "A mysterious star in an unknown system"
-                },
-                "narrationPrompt": "A mysterious star in an unknown system"
-            },
-            {
-                "id": "planet1",
-                "name": "Unknown Planet",
-                "type": "planet",
-                "position": [20, 0, 0],
-                "size": 1,
-                "color": "#4169E1",
-                "info": {
-                    "distance": "1 AU",
-                    "temp": "288 K",
-                    "atmosphere": "Unknown",
-                    "moons": 0,
-                    "interesting_fact": "A mysterious world orbiting a distant star"
-                },
-                "narrationPrompt": "A mysterious world orbiting a distant star"
-            }
+            CelestialObject(
+                id="star1",
+                name="Unknown Star",
+                type="star",
+                position=[0, 0, 0],
+                size=3,
+                color="#FFFF00",
+                info=ObjectInfo(
+                    distance="0 AU",
+                    temp="5778 K",
+                    magnitude="-26.74",
+                    interesting_fact="A mysterious star in an unknown system"
+                ),
+                narrationPrompt="A mysterious star in an unknown system"
+            ),
+            CelestialObject(
+                id="planet1",
+                name="Unknown Planet",
+                type="planet",
+                position=[20, 0, 0],
+                size=1,
+                color="#4169E1",
+                info=ObjectInfo(
+                    distance="1 AU",
+                    temp="288 K",
+                    atmosphere="Unknown",
+                    moons=0,
+                    interesting_fact="A mysterious world orbiting a distant star"
+                ),
+                narrationPrompt="A mysterious world orbiting a distant star"
+            )
         ]
         
         return GeneratedUniverse(
@@ -603,7 +771,7 @@ Maintain the poetic, awe-inspiring tone while ensuring scientific accuracy."""
             type=request.universe_type,
             name="Unknown System",
             description="A procedurally generated star system",
-            objects=[CelestialObject(**obj) for obj in objects],
+            objects=objects,
             generated_at=int(time.time()),
             parameters_used=request.parameters or {}
         )

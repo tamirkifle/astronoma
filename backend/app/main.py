@@ -1,24 +1,39 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 import socketio
 import json
 import os
+import json
+import time
+import asyncio
+import concurrent.futures
 from dotenv import load_dotenv
 import uvicorn
+from typing import Dict, Any, List
 
 from app.models import (
     UniverseData, NarrationRequest, NarrationResponse,
     ChatMessage, ChatResponse, UniverseGenerationRequest,
-    GeneratedUniverse
+    GeneratedUniverse, CelestialObject
 )
 from app.llama_service import LlamaService
+from app.texture_generator import TextureGenerator
 
 # Load environment variables
 load_dotenv()
 
 # Create FastAPI app
 app = FastAPI(title="Astronoma API", version="1.0.0")
+
+# Create static directories if they don't exist
+from pathlib import Path
+static_dir = Path("static/textures")
+static_dir.mkdir(parents=True, exist_ok=True)
+
+# Mount static files for textures
+app.mount("/textures", StaticFiles(directory="static/textures"), name="textures")
 
 # Configure CORS
 app.add_middleware(
@@ -40,9 +55,18 @@ socket_app = socketio.ASGIApp(sio, app)
 
 # Initialize services
 llama_service = LlamaService(os.getenv("LLAMA_API_KEY", "demo_key"))
+ENABLE_TEXTURE_GENERATION = os.getenv("ENABLE_TEXTURE_GENERATION", "true").lower() == "true"
+
+if ENABLE_TEXTURE_GENERATION:
+    texture_generator = TextureGenerator()
+    print("✅ Texture generation enabled")
+else:
+    texture_generator = None
+    print("⚠️ Texture generation disabled")
 
 # Store generated universes in memory for the session (in production, use Redis or similar)
 universe_cache = {}
+texture_cache = {}
 
 # REST API Endpoints
 @app.get("/")
@@ -55,19 +79,22 @@ async def health_check():
 
 @app.get("/universe/{universe_id}")
 async def get_universe(universe_id: str):
-    """Get universe data by ID"""
+    """Get universe data by ID - returns immediately, textures load async"""
     try:
         # Check if it's a generated universe
         if universe_id in universe_cache:
-            return universe_cache[universe_id]
-        
+            universe_data = universe_cache[universe_id]
         # For MVP, only support solar-system from file
-        if universe_id == "solar-system":
+        elif universe_id == "solar-system":
             with open("data/solar_system.json", "r") as f:
-                data = json.load(f)
-            return data
+                universe_data = json.load(f)
+        else:
+            raise HTTPException(status_code=404, detail="Universe not found")
+        
+        # Return universe data immediately without textures
+        # Textures will be loaded separately via the texture endpoint
+        return universe_data
             
-        raise HTTPException(status_code=404, detail="Universe not found")
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Universe data not found")
     except Exception as e:
@@ -75,7 +102,7 @@ async def get_universe(universe_id: str):
 
 @app.post("/universe/generate")
 async def generate_universe(request: UniverseGenerationRequest):
-    """Generate a new universe using Llama API"""
+    """Generate a new universe using Llama API with auto-generated textures"""
     try:
         print(f"Generating universe of type: {request.universe_type}")
         print(f"Request parameters: {request.parameters}")
@@ -83,23 +110,110 @@ async def generate_universe(request: UniverseGenerationRequest):
         # Generate the universe
         generated_universe = await llama_service.generate_universe(request)
         
+        # Generate textures for each object
+        for obj in generated_universe.objects:
+            # Determine planet type based on properties
+            planet_type = "star" if obj.type == "star" else \
+                        "gas" if obj.info.atmosphere and "Hydrogen" in obj.info.atmosphere else \
+                        "ice" if obj.info.temp and int(obj.info.temp.replace("K", "").strip()) < 200 else \
+                        "terrestrial" if obj.info.atmosphere and "Oxygen" in obj.info.atmosphere else "rocky"
+            
+            # Get temperature
+            temp = None
+            if obj.info.temp:
+                try:
+                    temp = int(obj.info.temp.replace("K", "").replace(",", "").strip())
+                except:
+                    pass
+            
+            # Generate texture
+            texture_data = texture_generator.generate_texture(
+                planet_type=planet_type,
+                base_color=obj.color,
+                name=obj.name,
+                temperature=temp
+            )
+            
+            # Cache it
+            texture_cache[obj.id] = texture_data
+        
         # Cache the generated universe
-        universe_cache[generated_universe.id] = {
+        universe_dict = {
             "id": generated_universe.id,
             "type": generated_universe.type,
             "name": generated_universe.name,
             "description": generated_universe.description,
-            "objects": [obj.dict() for obj in generated_universe.objects],
+            "objects": [
+                {
+                    **obj.dict(),
+                    "generatedTextures": texture_cache.get(obj.id)
+                } for obj in generated_universe.objects
+            ],
             "generated_at": generated_universe.generated_at,
             "parameters_used": generated_universe.parameters_used
         }
+        universe_cache[generated_universe.id] = universe_dict
         
-        return universe_cache[generated_universe.id]
+        return universe_dict
     except Exception as e:
         print(f"Error generating universe: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/texture/generate-batch")
+async def generate_textures_batch(objects: List[Dict[str, Any]]):
+    """Generate textures for multiple objects in batch"""
+    results = {}
+    
+    for obj in objects:
+        try:
+            obj_id = obj["id"]
+            
+            # Check cache first
+            if obj_id in texture_cache:
+                results[obj_id] = texture_cache[obj_id]
+                continue
+            
+            # Determine planet type based on properties and name
+            planet_type = "star" if obj["type"] == "star" else \
+                        "gas" if obj.get("name") in ["Jupiter", "Saturn", "Uranus", "Neptune", "Bespin"] else \
+                        "ice" if obj.get("name") in ["Uranus", "Neptune", "Hoth"] or (temp and temp < 150) else \
+                        "terrestrial" if obj.get("name") in ["Earth", "Endor", "Coruscant"] else \
+                        "rocky" if temp and temp > 600 else "rocky"  # Volcanic planets like Mustafar
+            
+            # Get temperature if available
+            temp = None
+            if "temp" in obj.get("info", {}):
+                try:
+                    temp = int(obj["info"]["temp"].replace("K", "").replace(",", "").strip())
+                except:
+                    pass
+            
+            # Generate texture
+            texture_data = texture_generator.generate_texture(
+                planet_type=planet_type,
+                base_color=obj["color"],
+                name=obj["name"],
+                temperature=temp
+            )
+            
+            # Generate ring texture if needed
+            if obj.get("ringSystem"):
+                ring_texture = texture_generator.generate_ring_texture(
+                    obj["ringSystem"]["color"],
+                    obj["ringSystem"]["opacity"]
+                )
+                texture_data["ringTexture"] = ring_texture["ring"]
+            
+            texture_cache[obj_id] = texture_data
+            results[obj_id] = texture_data
+            
+        except Exception as e:
+            print(f"Error generating texture for {obj.get('name', 'unknown')}: {e}")
+            results[obj_id] = {"error": str(e)}
+    
+    return results
 
 @app.get("/universe/templates")
 async def get_universe_templates():
@@ -247,13 +361,35 @@ async def handle_generate_universe(sid, data):
         request = UniverseGenerationRequest(**data)
         generated_universe = await llama_service.generate_universe(request)
         
+        # Generate textures for each object
+        objects_with_textures = []
+        for obj in generated_universe.objects:
+            obj_dict = obj.dict()
+            
+            # Determine planet type
+            planet_type = "star" if obj.type == "star" else \
+                        "gas" if obj.info.atmosphere and "Hydrogen" in obj.info.atmosphere else \
+                        "ice" if obj.info.temp and int(obj.info.temp.replace("K", "").strip()) < 200 else \
+                        "terrestrial" if obj.info.atmosphere and "Oxygen" in obj.info.atmosphere else "rocky"
+            
+            # Generate texture
+            texture_data = texture_generator.generate_texture(
+                planet_type=planet_type,
+                base_color=obj.color,
+                name=obj.name,
+                temperature=int(obj.info.temp.replace("K", "").strip()) if obj.info.temp else None
+            )
+            
+            obj_dict["generatedTextures"] = texture_data
+            objects_with_textures.append(obj_dict)
+        
         # Cache it
         universe_data = {
             "id": generated_universe.id,
             "type": generated_universe.type,
             "name": generated_universe.name,
             "description": generated_universe.description,
-            "objects": [obj.dict() for obj in generated_universe.objects],
+            "objects": objects_with_textures,
             "generated_at": generated_universe.generated_at,
             "parameters_used": generated_universe.parameters_used
         }

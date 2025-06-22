@@ -9,6 +9,13 @@ class ObjectInfo(BaseModel):
     magnitude: Optional[str] = None
     interesting_fact: Optional[str] = None
 
+class RingSystem(BaseModel):
+    innerRadius: float
+    outerRadius: float
+    texture: Optional[str] = None
+    color: str
+    opacity: float
+
 class CelestialObject(BaseModel):
     id: str
     name: str
@@ -17,6 +24,15 @@ class CelestialObject(BaseModel):
     size: float
     color: str
     texture: Optional[str] = None
+    textureMap: Optional[str] = None
+    normalMap: Optional[str] = None
+    bumpMap: Optional[str] = None
+    specularMap: Optional[str] = None
+    emissiveMap: Optional[str] = None
+    emissiveIntensity: Optional[float] = None
+    atmosphereColor: Optional[str] = None
+    atmosphereDensity: Optional[float] = None
+    ringSystem: Optional[RingSystem] = None
     info: ObjectInfo
     narrationPrompt: str
 
