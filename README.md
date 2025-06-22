@@ -1,5 +1,5 @@
 # Astronoma - AI-Powered Universe Explorer
-<img align="center" src="Banner.png" alt="isaacritharson" />
+![App Screenshot](Banner.png)
 Explore the cosmos with Llama 4-powered narration and intelligent chat assistance.
 
 ## Quick Start
