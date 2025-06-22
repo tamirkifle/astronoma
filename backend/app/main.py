@@ -31,7 +31,9 @@ app.add_middleware(
 # Create Socket.IO server
 sio = socketio.AsyncServer(
     async_mode='asgi',
-    cors_allowed_origins='*'
+    cors_allowed_origins="*",
+    logger=True,
+    engineio_logger=True
 )
 socket_app = socketio.ASGIApp(sio, app)
 
@@ -102,16 +104,16 @@ async def request_narration(sid, data):
         print(f"Error in narration: {e}")
         await sio.emit('narration_error', {'error': str(e)}, to=sid)
 
-@sio.event
-async def chat_message(sid, data):
-    """Handle chat messages"""
+@sio.on('chat_message')
+async def handle_chat_message(sid, data):
+    print("✅ Received chat_message:", data)
+
     try:
-        print(f"Chat message from {sid}: {data}")
         message = ChatMessage(**data)
         response = await llama_service.handle_chat(message)
         await sio.emit('chat_response', response.dict(), to=sid)
     except Exception as e:
-        print(f"Error in chat: {e}")
+        print("❌ Error processing chat_message:", e)
         await sio.emit('chat_error', {'error': str(e)}, to=sid)
 
 # Run the server
