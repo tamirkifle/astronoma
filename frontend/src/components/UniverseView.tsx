@@ -5,6 +5,9 @@ import * as THREE from 'three';
 import { CelestialObject, ViewState } from '../types/interfaces';
 import { textureLoader, TextureSet } from '../services/textureLoader';
 import { textureService } from '../services/textureService';
+import { useLoader } from '@react-three/fiber';
+import { TextureLoader } from 'three';
+
 
 interface UniverseViewProps {
   objects: CelestialObject[];
@@ -115,7 +118,6 @@ function Planet({ object, onClick, isSelected }: PlanetProps) {
 
   return (
     <group position={object.position}>
-      {/* Planet */}
       <mesh
         ref={meshRef}
         onClick={(e) => {

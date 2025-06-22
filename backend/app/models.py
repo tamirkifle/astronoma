@@ -81,6 +81,38 @@ class ChatResponse(BaseModel):
     text: str
     action: Optional[Union[NavigationAction, GenerateUniverseAction]] = None
 
+# Speech-related models
+class SpeechInputRequest(BaseModel):
+    audio_data: str  # Base64 encoded audio
+    language: Optional[str] = 'en'
+    sample_rate: int = 16000
+    sample_width: int = 2
+
+class SpeechInputResponse(BaseModel):
+    success: bool
+    text: Optional[str] = None
+    language: Optional[str] = None
+    confidence: Optional[float] = None
+    error: Optional[str] = None
+
+class SpeechOutputRequest(BaseModel):
+    text: str
+    language: str = 'en'
+    voice_type: str = 'neural'  # 'neural' or 'standard'
+
+class SpeechOutputResponse(BaseModel):
+    success: bool
+    audio_url: Optional[str] = None
+    error: Optional[str] = None
+
+class LanguageInfo(BaseModel):
+    code: str
+    name: str
+    native_name: str
+
+class AvailableLanguagesResponse(BaseModel):
+    languages: List[LanguageInfo]
+
 class UniverseData(BaseModel):
     objects: List[CelestialObject]
 

@@ -12,14 +12,16 @@ import concurrent.futures
 from dotenv import load_dotenv
 import uvicorn
 from typing import Dict, Any, List
+import base64
 
 from app.models import (
     UniverseData, NarrationRequest, NarrationResponse,
     ChatMessage, ChatResponse, UniverseGenerationRequest,
-    GeneratedUniverse, CelestialObject
+    GeneratedUniverse, SpeechInputRequest, SpeechInputResponse,
+    SpeechOutputRequest, SpeechOutputResponse, AvailableLanguagesResponse
 )
 from app.llama_service import LlamaService
-from app.texture_generator import TextureGenerator
+from app.speech_service import speech_service
 
 # Load environment variables
 load_dotenv()
@@ -76,6 +78,68 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "astronoma-api"}
+
+# Speech-related endpoints
+@app.post("/speech/transcribe", response_model=SpeechInputResponse)
+async def transcribe_speech(request: SpeechInputRequest):
+    """Transcribe speech to text"""
+    try:
+        # Decode base64 audio data
+        audio_data = base64.b64decode(request.audio_data)
+        
+        # Process speech input
+        result = await speech_service.process_speech_input(
+            audio_data, 
+            request.language
+        )
+        
+        return SpeechInputResponse(**result)
+        
+    except Exception as e:
+        print(f"❌ Speech transcription error: {e}")
+        return SpeechInputResponse(
+            success=False,
+            error=str(e)
+        )
+
+@app.post("/speech/synthesize", response_model=SpeechOutputResponse)
+async def synthesize_speech(request: SpeechOutputRequest):
+    """Synthesize text to speech"""
+    try:
+        # Generate speech
+        audio_url = await speech_service.synthesize_speech(
+            request.text,
+            request.language,
+            request.voice_type
+        )
+        
+        if audio_url:
+            return SpeechOutputResponse(
+                success=True,
+                audio_url=audio_url
+            )
+        else:
+            return SpeechOutputResponse(
+                success=False,
+                error="Failed to synthesize speech"
+            )
+            
+    except Exception as e:
+        print(f"❌ Speech synthesis error: {e}")
+        return SpeechOutputResponse(
+            success=False,
+            error=str(e)
+        )
+
+@app.get("/speech/languages", response_model=AvailableLanguagesResponse)
+async def get_available_languages():
+    """Get list of available languages for speech processing"""
+    try:
+        languages = await speech_service.get_available_languages()
+        return AvailableLanguagesResponse(languages=languages)
+    except Exception as e:
+        print(f"❌ Error getting languages: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/universe/{universe_id}")
 async def get_universe(universe_id: str):
@@ -298,6 +362,18 @@ async def test_llama():
             "error": str(e),
             "traceback": traceback.format_exc()
         }
+    
+@app.post("/planet/generate-texture")
+async def generate_planet_texture(planet_id: str, description: str):
+    """
+    Generate a texture image for a planet using Llama 4 API.
+    """
+    prompt = f"Generate a seamless, realistic texture for a planet: {description}. No text, just the surface."
+    image_url = await llama_service.generate_planet_texture(prompt, planet_id)
+    if image_url:
+        return {"texture_url": image_url}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to generate texture")
 
 @app.get("/debug/check-env")
 async def check_environment():
@@ -309,6 +385,22 @@ async def check_environment():
         "api_key_preview": f"{api_key[:10]}..." if api_key else "NOT SET",
         "env_vars": list(os.environ.keys())
     }
+
+@app.post("/chat", response_model=ChatResponse)
+async def send_chat_message(request: ChatMessage):
+    """Send a chat message and get AI response"""
+    try:
+        print(f"💬 Chat message received: {request.message}")
+        
+        # Call the llama service
+        response = await llama_service.handle_chat(request)
+        
+        return response
+    except Exception as e:
+        print(f"❌ Chat error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Socket.IO Event Handlers
 @sio.event
@@ -352,6 +444,52 @@ async def handle_chat_message(sid, data):
         import traceback
         traceback.print_exc()
         await sio.emit('chat_error', {'error': str(e)}, to=sid)
+
+@sio.on('speech_input')
+async def handle_speech_input(sid, data):
+    """Handle speech input via WebSocket"""
+    try:
+        print(f"🎤 Speech input from {sid}")
+        
+        # Decode base64 audio data
+        audio_data = base64.b64decode(data['audio_data'])
+        language = data.get('language', 'en')
+        
+        # Process speech input
+        result = await speech_service.process_speech_input(audio_data, language)
+        
+        await sio.emit('speech_input_response', result, to=sid)
+        
+    except Exception as e:
+        print(f"❌ Speech input error: {e}")
+        await sio.emit('speech_input_error', {'error': str(e)}, to=sid)
+
+@sio.on('speech_output')
+async def handle_speech_output(sid, data):
+    """Handle speech output request via WebSocket"""
+    try:
+        print(f"🔊 Speech output request from {sid}")
+        
+        text = data['text']
+        language = data.get('language', 'en')
+        voice_type = data.get('voice_type', 'neural')
+        
+        # Generate speech
+        audio_url = await speech_service.synthesize_speech(text, language, voice_type)
+        
+        if audio_url:
+            await sio.emit('speech_output_response', {
+                'success': True,
+                'audio_url': audio_url
+            }, to=sid)
+        else:
+            await sio.emit('speech_output_error', {
+                'error': 'Failed to synthesize speech'
+            }, to=sid)
+            
+    except Exception as e:
+        print(f"❌ Speech output error: {e}")
+        await sio.emit('speech_output_error', {'error': str(e)}, to=sid)
 
 @sio.on('generate_universe')
 async def handle_generate_universe(sid, data):

@@ -407,181 +407,180 @@ Maintain the poetic, awe-inspiring tone while ensuring scientific accuracy."""
             )
     
     async def handle_chat(self, message: ChatMessage) -> ChatResponse:
-            """Handle chat messages with Llama-powered understanding"""
+        """Handle chat messages with Llama-powered understanding"""
+        
+        # System prompt for chat
+        system_prompt = """You are an intelligent space exploration assistant in a 3D universe visualization app.
+
+You help users navigate the current universe they are exploring and answer questions about it.
+
+IMPORTANT: 
+- Always respond with ONLY valid JSON
+- No markdown formatting, no backticks, no extra text
+- Use exact object IDs for navigation
+- Be aware of which universe the user is currently in"""
+        
+        # Extract universe context if provided
+        universe_objects = []
+        universe_name = "Unknown Universe"
+        universe_type = "unknown"
+        
+        if message.universeContext:
+            universe_name = message.universeContext.universeName
+            universe_type = message.universeContext.universeType
+            universe_objects = [(obj.id, obj.name, obj.type) for obj in message.universeContext.objects]
+        else:
+            # Fallback to solar system if no context
+            universe_objects = [
+                ("sun", "Sun", "star"),
+                ("mercury", "Mercury", "planet"),
+                ("venus", "Venus", "planet"),
+                ("earth", "Earth", "planet"),
+                ("mars", "Mars", "planet"),
+                ("jupiter", "Jupiter", "planet"),
+                ("saturn", "Saturn", "planet"),
+                ("uranus", "Uranus", "planet"),
+                ("neptune", "Neptune", "planet")
+            ]
+        
+        # Build object list for prompt
+        object_list = "\n".join([f"- {obj[1]} (ID: {obj[0]}, Type: {obj[2]})" for obj in universe_objects])
+        valid_ids = [obj[0] for obj in universe_objects]
+        
+        # Build the user prompt
+        prompt = f"""User's message: "{message.message}"
+
+Current Universe: {universe_name} ({universe_type})
+Available objects in this universe:
+{object_list}
+
+Valid IDs for navigation: {', '.join(valid_ids)}
+
+Understand the user's intent based on the CURRENT universe context:
+- If asking about "most iconic" in Star Wars universe, think Tatooine or Death Star
+- If asking about "largest" in solar system, that's Jupiter
+- If asking "what's here", list the current universe's objects
+
+For navigation, the targetId must EXACTLY match one of the valid IDs above.
+
+Response format for navigation:
+{{"text": "Taking you to [object name]!", "action": {{"type": "navigate", "targetId": "[exact_id]", "duration": 2000}}}}
+
+Response format for universe generation:
+{{"text": "Creating [universe name]...", "action": {{"type": "generate_universe", "universe_type": "[universe-type]"}}}}
+
+Response format for questions (no action):
+{{"text": "In this {universe_type} universe, [answer about current universe]..."}}"""
+
+        try:
+            print(f"🎯 Chat received: {message.message}")
+            print(f"🌌 Current universe: {universe_name} with {len(universe_objects)} objects")
             
-            # System prompt for chat
-            system_prompt = """You are an intelligent space exploration assistant in a 3D universe visualization app.
-
-    You help users navigate the current universe they are exploring and answer questions about it.
-
-    IMPORTANT: 
-    - Always respond with ONLY valid JSON
-    - No markdown formatting, no backticks, no extra text
-    - Use exact object IDs for navigation
-    - Be aware of which universe the user is currently in"""
+            # Call Llama API
+            response_text = await self._call_llama_api(
+                prompt, 
+                max_tokens=200, 
+                temperature=0.3,  # Lower temperature for more consistent JSON
+                system_prompt=system_prompt
+            )
             
-            # Extract universe context if provided
-            universe_objects = []
-            universe_name = "Unknown Universe"
-            universe_type = "unknown"
+            print(f"🤖 Llama response: {response_text}")
             
-            if message.universeContext:
-                universe_name = message.universeContext.universeName
-                universe_type = message.universeContext.universeType
-                universe_objects = [(obj.id, obj.name, obj.type) for obj in message.universeContext.objects]
-            else:
-                # Fallback to solar system if no context
-                universe_objects = [
-                    ("sun", "Sun", "star"),
-                    ("mercury", "Mercury", "planet"),
-                    ("venus", "Venus", "planet"),
-                    ("earth", "Earth", "planet"),
-                    ("mars", "Mars", "planet"),
-                    ("jupiter", "Jupiter", "planet"),
-                    ("saturn", "Saturn", "planet"),
-                    ("uranus", "Uranus", "planet"),
-                    ("neptune", "Neptune", "planet")
-                ]
-            
-            # Build object list for prompt
-            object_list = "\n".join([f"- {obj[1]} (ID: {obj[0]}, Type: {obj[2]})" for obj in universe_objects])
-            valid_ids = [obj[0] for obj in universe_objects]
-            
-            # Build the user prompt
-            prompt = f"""User's message: "{message.message}"
-
-    Current Universe: {universe_name} ({universe_type})
-    Available objects in this universe:
-    {object_list}
-
-    Valid IDs for navigation: {', '.join(valid_ids)}
-
-    Understand the user's intent based on the CURRENT universe context:
-    - If asking about "most iconic" in Star Wars universe, think Tatooine or Death Star
-    - If asking about "largest" in solar system, that's Jupiter
-    - If asking "what's here", list the current universe's objects
-
-    For navigation, the targetId must EXACTLY match one of the valid IDs above.
-
-    Response format for navigation:
-    {{"text": "Taking you to [object name]!", "action": {{"type": "navigate", "targetId": "[exact_id]", "duration": 2000}}}}
-
-    Response format for universe generation:
-    {{"text": "Creating [universe name]...", "action": {{"type": "generate_universe", "universe_type": "[universe-type]"}}}}
-
-    Response format for questions (no action):
-    {{"text": "In this {universe_type} universe, [answer about current universe]..."}}"""
-
+            # Try to parse JSON response
             try:
-                print(f"🎯 Chat received: {message.message}")
-                print(f"🌌 Current universe: {universe_name} with {len(universe_objects)} objects")
+                # Clean up response
+                json_str = response_text.strip()
                 
-                # Call Llama API
-                response_text = await self._call_llama_api(
-                    prompt, 
-                    max_tokens=200, 
-                    temperature=0.3,  # Lower temperature for more consistent JSON
-                    system_prompt=system_prompt
-                )
+                # Remove markdown formatting
+                if json_str.startswith('```json'):
+                    json_str = json_str[7:]
+                if json_str.startswith('```'):
+                    json_str = json_str[3:]
+                if json_str.endswith('```'):
+                    json_str = json_str[:-3]
+                    
+                json_str = json_str.replace('```json\n', '').replace('```\n', '')
+                json_str = json_str.strip()
                 
-                print(f"🤖 Llama response: {response_text}")
+                print(f"📄 Cleaned JSON: {json_str}")
                 
-                # Try to parse JSON response
-                try:
-                    # Clean up response
-                    json_str = response_text.strip()
-                    
-                    # Remove markdown formatting
-                    if json_str.startswith('```json'):
-                        json_str = json_str[7:]
-                    if json_str.startswith('```'):
-                        json_str = json_str[3:]
-                    if json_str.endswith('```'):
-                        json_str = json_str[:-3]
-                        
-                    json_str = json_str.replace('```json\n', '').replace('```\n', '')
-                    json_str = json_str.strip()
-                    
-                    print(f"📄 Cleaned JSON: {json_str}")
-                    
-                    response_data = json.loads(json_str)
-                    
-                    # Validate navigation actions
-                    if response_data.get('action') and response_data['action'].get('type') == 'navigate':
-                        target_id = response_data['action'].get('targetId', '')
-                        if target_id not in valid_ids:
-                            print(f"⚠️ Invalid navigation target: {target_id}")
-                            # Try to find a close match
-                            for obj_id, obj_name, _ in universe_objects:
-                                if target_id.lower() in obj_name.lower() or obj_name.lower() in target_id.lower():
-                                    print(f"🔧 Correcting to: {obj_id}")
-                                    response_data['action']['targetId'] = obj_id
-                                    break
-                            else:
-                                response_data['action'] = None
-                                response_data['text'] = f"I couldn't find '{target_id}' in {universe_name}. Available objects are: {', '.join([obj[1] for obj in universe_objects])}"
-                    
-                    return ChatResponse(**response_data)
-                    
-                except Exception as e:
-                    print(f"⚠️ Failed to parse JSON response: {e}")
-                    print(f"Raw response: {response_text}")
-                    
-                    # Fallback: try simple keyword matching based on current universe
-                    msg_lower = message.message.lower()
-                    
-                    # Look for navigation intent
-                    nav_words = ['go', 'take', 'show', 'navigate', 'visit', 'see']
-                    if any(word in msg_lower for word in nav_words):
-                        # Try to match object names
+                response_data = json.loads(json_str)
+                
+                # Validate navigation actions
+                if response_data.get('action') and response_data['action'].get('type') == 'navigate':
+                    target_id = response_data['action'].get('targetId', '')
+                    if target_id not in valid_ids:
+                        print(f"⚠️ Invalid navigation target: {target_id}")
+                        # Try to find a close match
                         for obj_id, obj_name, _ in universe_objects:
-                            if obj_name.lower() in msg_lower:
-                                print(f"🔧 Fallback navigation to {obj_id}")
+                            if target_id.lower() in obj_name.lower() or obj_name.lower() in target_id.lower():
+                                print(f"🔧 Correcting to: {obj_id}")
+                                response_data['action']['targetId'] = obj_id
+                                break
+                        else:
+                            response_data['action'] = None
+                            response_data['text'] = f"I couldn't find '{target_id}' in {universe_name}. Available objects are: {', '.join([obj[1] for obj in universe_objects])}"
+                
+                return ChatResponse(**response_data)
+                
+            except Exception as e:
+                print(f"⚠️ Failed to parse JSON response: {e}")
+                print(f"Raw response: {response_text}")
+                
+                # Fallback: try simple keyword matching based on current universe
+                msg_lower = message.message.lower()
+                
+                # Look for navigation intent
+                nav_words = ['go', 'take', 'show', 'navigate', 'visit', 'see']
+                if any(word in msg_lower for word in nav_words):
+                    # Try to match object names
+                    for obj_id, obj_name, _ in universe_objects:
+                        if obj_name.lower() in msg_lower:
+                            print(f"🔧 Fallback navigation to {obj_id}")
+                            return ChatResponse(
+                                text=f"Let me take you to {obj_name}!",
+                                action=NavigationAction(
+                                    type="navigate",
+                                    targetId=obj_id,
+                                    duration=2000
+                                )
+                            )
+                
+                # Check for universe-specific queries
+                if 'iconic' in msg_lower or 'famous' in msg_lower:
+                    if universe_type == 'star-wars':
+                        # Find Tatooine or similar
+                        for obj_id, obj_name, _ in universe_objects:
+                            if 'tatooine' in obj_name.lower():
                                 return ChatResponse(
-                                    text=f"Let me take you to {obj_name}!",
+                                    text="Tatooine is the most iconic planet in Star Wars!",
                                     action=NavigationAction(
                                         type="navigate",
                                         targetId=obj_id,
                                         duration=2000
                                     )
                                 )
-                    
-                    # Check for universe-specific queries
-                    if 'iconic' in msg_lower or 'famous' in msg_lower:
-                        if universe_type == 'star-wars':
-                            # Find Tatooine or similar
-                            for obj_id, obj_name, _ in universe_objects:
-                                if 'tatooine' in obj_name.lower():
-                                    return ChatResponse(
-                                        text="Tatooine is the most iconic planet in Star Wars!",
-                                        action=NavigationAction(
-                                            type="navigate",
-                                            targetId=obj_id,
-                                            duration=2000
-                                        )
-                                    )
-                    
-                    # Default response about current universe
-                    return ChatResponse(
-                        text=f"In {universe_name}, you can explore: {', '.join([obj[1] for obj in universe_objects[:5]])}{'...' if len(universe_objects) > 5 else ''}"
-                    )
-                    
-            except Exception as e:
-                print(f"❌ Error in chat handling: {e}")
-                import traceback
-                traceback.print_exc()
                 
-                # Emergency fallback with current universe info
+                # Default response about current universe
                 return ChatResponse(
-                    text=f"I'm having trouble understanding. You're in {universe_name}. Try asking me to go to one of these: {', '.join([obj[1] for obj in universe_objects[:3]])}"
-                )    
-    
+                    text=f"In {universe_name}, you can explore: {', '.join([obj[1] for obj in universe_objects[:5]])}{'...' if len(universe_objects) > 5 else ''}"
+                )
+                
+        except Exception as e:
+            print(f"❌ Error in chat handling: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Emergency fallback with current universe info
+            return ChatResponse(
+                text=f"I'm having trouble understanding. You're in {universe_name}. Try asking me to go to one of these: {', '.join([obj[1] for obj in universe_objects[:3]])}"
+            )    
     # Keep existing helper methods
     def _generate_example_exoplanet_system(self, request: UniverseGenerationRequest) -> GeneratedUniverse:
         """Generate an example exoplanet system"""
         objects = [
             CelestialObject(
-                id="kepler22",
+                id="kepler22",  
                 name="Kepler-22",
                 type="star",
                 position=[0, 0, 0],
