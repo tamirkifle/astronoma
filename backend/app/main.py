@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.llama_service import LlamaService
 from app.speech_service import speech_service
+from app.texture_generator import TextureGenerator  # Added missing import
 
 # Load environment variables
 load_dotenv()
@@ -60,8 +61,13 @@ llama_service = LlamaService(os.getenv("LLAMA_API_KEY", "demo_key"))
 ENABLE_TEXTURE_GENERATION = os.getenv("ENABLE_TEXTURE_GENERATION", "true").lower() == "true"
 
 if ENABLE_TEXTURE_GENERATION:
-    texture_generator = TextureGenerator()
-    print("✅ Texture generation enabled")
+    try:
+        texture_generator = TextureGenerator()
+        print("✅ Texture generation enabled")
+    except Exception as e:
+        print(f"⚠️ Failed to initialize texture generator: {e}")
+        texture_generator = None
+        print("⚠️ Texture generation disabled")
 else:
     texture_generator = None
     print("⚠️ Texture generation disabled")
@@ -174,32 +180,36 @@ async def generate_universe(request: UniverseGenerationRequest):
         # Generate the universe
         generated_universe = await llama_service.generate_universe(request)
         
-        # Generate textures for each object
-        for obj in generated_universe.objects:
-            # Determine planet type based on properties
-            planet_type = "star" if obj.type == "star" else \
-                        "gas" if obj.info.atmosphere and "Hydrogen" in obj.info.atmosphere else \
-                        "ice" if obj.info.temp and int(obj.info.temp.replace("K", "").strip()) < 200 else \
-                        "terrestrial" if obj.info.atmosphere and "Oxygen" in obj.info.atmosphere else "rocky"
-            
-            # Get temperature
-            temp = None
-            if obj.info.temp:
+        # Generate textures for each object (if texture generator is available)
+        if texture_generator:
+            for obj in generated_universe.objects:
                 try:
-                    temp = int(obj.info.temp.replace("K", "").replace(",", "").strip())
-                except:
-                    pass
-            
-            # Generate texture
-            texture_data = texture_generator.generate_texture(
-                planet_type=planet_type,
-                base_color=obj.color,
-                name=obj.name,
-                temperature=temp
-            )
-            
-            # Cache it
-            texture_cache[obj.id] = texture_data
+                    # Determine planet type based on properties
+                    planet_type = "star" if obj.type == "star" else \
+                                "gas" if obj.info.atmosphere and "Hydrogen" in obj.info.atmosphere else \
+                                "ice" if obj.info.temp and int(obj.info.temp.replace("K", "").strip()) < 200 else \
+                                "terrestrial" if obj.info.atmosphere and "Oxygen" in obj.info.atmosphere else "rocky"
+                    
+                    # Get temperature
+                    temp = None
+                    if obj.info.temp:
+                        try:
+                            temp = int(obj.info.temp.replace("K", "").replace(",", "").strip())
+                        except:
+                            pass
+                    
+                    # Generate texture
+                    texture_data = texture_generator.generate_texture(
+                        planet_type=planet_type,
+                        base_color=obj.color,
+                        name=obj.name,
+                        temperature=temp
+                    )
+                    
+                    # Cache it
+                    texture_cache[obj.id] = texture_data
+                except Exception as tex_error:
+                    print(f"⚠️ Failed to generate texture for {obj.name}: {tex_error}")
         
         # Cache the generated universe
         universe_dict = {
@@ -230,6 +240,12 @@ async def generate_textures_batch(objects: List[Dict[str, Any]]):
     """Generate textures for multiple objects in batch"""
     results = {}
     
+    if not texture_generator:
+        print("⚠️ Texture generator not available")
+        for obj in objects:
+            results[obj["id"]] = {"error": "Texture generation not available"}
+        return results
+    
     for obj in objects:
         try:
             obj_id = obj["id"]
@@ -239,13 +255,6 @@ async def generate_textures_batch(objects: List[Dict[str, Any]]):
                 results[obj_id] = texture_cache[obj_id]
                 continue
             
-            # Determine planet type based on properties and name
-            planet_type = "star" if obj["type"] == "star" else \
-                        "gas" if obj.get("name") in ["Jupiter", "Saturn", "Uranus", "Neptune", "Bespin"] else \
-                        "ice" if obj.get("name") in ["Uranus", "Neptune", "Hoth"] or (temp and temp < 150) else \
-                        "terrestrial" if obj.get("name") in ["Earth", "Endor", "Coruscant"] else \
-                        "rocky" if temp and temp > 600 else "rocky"  # Volcanic planets like Mustafar
-            
             # Get temperature if available
             temp = None
             if "temp" in obj.get("info", {}):
@@ -253,6 +262,13 @@ async def generate_textures_batch(objects: List[Dict[str, Any]]):
                     temp = int(obj["info"]["temp"].replace("K", "").replace(",", "").strip())
                 except:
                     pass
+            
+            # Determine planet type based on properties and name
+            planet_type = "star" if obj["type"] == "star" else \
+                        "gas" if obj.get("name") in ["Jupiter", "Saturn", "Uranus", "Neptune", "Bespin"] else \
+                        "ice" if obj.get("name") in ["Uranus", "Neptune", "Hoth"] or (temp and temp < 150) else \
+                        "terrestrial" if obj.get("name") in ["Earth", "Endor", "Coruscant"] else \
+                        "rocky" if temp and temp > 600 else "rocky"  # Volcanic planets like Mustafar
             
             # Generate texture
             texture_data = texture_generator.generate_texture(
@@ -368,12 +384,12 @@ async def generate_planet_texture(planet_id: str, description: str):
     """
     Generate a texture image for a planet using Llama 4 API.
     """
-    prompt = f"Generate a seamless, realistic texture for a planet: {description}. No text, just the surface."
-    image_url = await llama_service.generate_planet_texture(prompt, planet_id)
-    if image_url:
-        return {"texture_url": image_url}
-    else:
-        raise HTTPException(status_code=500, detail="Failed to generate texture")
+    if not texture_generator:
+        raise HTTPException(status_code=503, detail="Texture generation not available")
+    
+    # This would need to be implemented in texture_generator
+    # For now, return an error
+    raise HTTPException(status_code=501, detail="Planet texture generation not implemented")
 
 @app.get("/debug/check-env")
 async def check_environment():
@@ -383,7 +399,8 @@ async def check_environment():
         "has_api_key": bool(api_key),
         "api_key_length": len(api_key),
         "api_key_preview": f"{api_key[:10]}..." if api_key else "NOT SET",
-        "env_vars": list(os.environ.keys())
+        "env_vars": list(os.environ.keys()),
+        "texture_generator_available": texture_generator is not None
     }
 
 @app.post("/chat", response_model=ChatResponse)
@@ -499,26 +516,31 @@ async def handle_generate_universe(sid, data):
         request = UniverseGenerationRequest(**data)
         generated_universe = await llama_service.generate_universe(request)
         
-        # Generate textures for each object
+        # Generate textures for each object (if available)
         objects_with_textures = []
         for obj in generated_universe.objects:
             obj_dict = obj.dict()
             
-            # Determine planet type
-            planet_type = "star" if obj.type == "star" else \
-                        "gas" if obj.info.atmosphere and "Hydrogen" in obj.info.atmosphere else \
-                        "ice" if obj.info.temp and int(obj.info.temp.replace("K", "").strip()) < 200 else \
-                        "terrestrial" if obj.info.atmosphere and "Oxygen" in obj.info.atmosphere else "rocky"
+            if texture_generator:
+                try:
+                    # Determine planet type
+                    planet_type = "star" if obj.type == "star" else \
+                                "gas" if obj.info.atmosphere and "Hydrogen" in obj.info.atmosphere else \
+                                "ice" if obj.info.temp and int(obj.info.temp.replace("K", "").strip()) < 200 else \
+                                "terrestrial" if obj.info.atmosphere and "Oxygen" in obj.info.atmosphere else "rocky"
+                    
+                    # Generate texture
+                    texture_data = texture_generator.generate_texture(
+                        planet_type=planet_type,
+                        base_color=obj.color,
+                        name=obj.name,
+                        temperature=int(obj.info.temp.replace("K", "").strip()) if obj.info.temp else None
+                    )
+                    
+                    obj_dict["generatedTextures"] = texture_data
+                except Exception as tex_error:
+                    print(f"⚠️ Failed to generate texture for {obj.name}: {tex_error}")
             
-            # Generate texture
-            texture_data = texture_generator.generate_texture(
-                planet_type=planet_type,
-                base_color=obj.color,
-                name=obj.name,
-                temperature=int(obj.info.temp.replace("K", "").strip()) if obj.info.temp else None
-            )
-            
-            obj_dict["generatedTextures"] = texture_data
             objects_with_textures.append(obj_dict)
         
         # Cache it
