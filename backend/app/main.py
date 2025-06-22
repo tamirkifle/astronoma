@@ -63,6 +63,23 @@ async def get_universe(universe_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+
+
+####TEST
+from fastapi import Body
+
+@app.post("/test-narration")
+async def test_narration(request: NarrationRequest = Body(...)):
+    response = await llama_service.generate_narration(request)
+    return response
+
+####TEST
+
+
+
+
+
 # Socket.IO Event Handlers
 @sio.event
 async def connect(sid, environ):
