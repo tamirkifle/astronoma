@@ -1,4 +1,4 @@
-# Astronoma - AI-Powered Universe Explorer
+# Astronomia - AI-Powered Universe Explorer
 
 Explore the cosmos with Llama 4-powered narration and intelligent chat assistance.
 
