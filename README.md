@@ -41,7 +41,7 @@ cp .env.example .env
 
 1. Start the backend (from `/backend`):
 ```bash
-python app/main.py
+uvicorn app.main:socket_app --host localhost --port 3000 --reload
 ```
 
 2. Start the frontend (from `/frontend` in a new terminal):
