@@ -83,10 +83,10 @@ npm run dev
 ### Generate and explore fictional universes 
 <img width="1508" alt="Screen Shot 2025-06-22 at 12 15 38 PM" src="https://github.com/user-attachments/assets/1855cf29-eccb-41cf-b3b5-bdf1868a727e" />
 
-### Move through and between universes using our Space Assistant (Voice Mode also available)
+### Move around and between universes using our Space Assistant (Voice Mode also available)
 <img width="1508" alt="Screen Shot 2025-06-22 at 12 16 59 PM" src="https://github.com/user-attachments/assets/f05e0229-2a78-4138-9281-f18a9801b930" />
 
-### Custom Narration Generated from the current view to make every scene interesting
+### Custom Narration generated for the current view to make every scene interesting
 <img width="1505" alt="Screen Shot 2025-06-22 at 12 17 36 PM" src="https://github.com/user-attachments/assets/1a27d7d9-df4c-4a3f-bdcb-6ba8e6f9d2fd" />
 
 
