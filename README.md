@@ -1,8 +1,5 @@
 # Astronoma - AI-Powered Universe Explorer
-![App Screenshot](Banner.png)
-
-
-
+![App Screenshot](assets/Banner.png)
 
 Explore the cosmos with Llama 4-powered narration and intelligent Chat assistance.
 ## Quick Start
@@ -72,22 +69,22 @@ npm run dev
 - Backend: FastAPI, Python, Socket.io
 - AI: Llama 4 API
 
-## Architecture
-![astronoma_diagram](https://github.com/user-attachments/assets/dda70642-e202-444a-ae92-813af8164b13)
+## Astronoma Architecture
+![Astronoma Architecture Diagram](assets/astronoma-architecture-diagram.jpeg)
 
 ## Screenshots
 
 ### Speak actions and move through the world
-<img width="1507" alt="Screen Shot 2025-06-22 at 12 15 26 PM" src="https://github.com/user-attachments/assets/e4fd8cbe-a43f-4c30-b8f7-89f2b5ff761e" />
+![Speak actions and move through the world](assets/speak-actions-and-move-through-the-world.png)
 
 ### Generate and explore fictional universes 
-<img width="1508" alt="Screen Shot 2025-06-22 at 12 15 38 PM" src="https://github.com/user-attachments/assets/1855cf29-eccb-41cf-b3b5-bdf1868a727e" />
+![Generate and explore fictional universes](assets/generate-and-explore-fictional-universes.png)
 
-### Move through and between universes using our Space Assistant (Voice Mode also available)
-<img width="1508" alt="Screen Shot 2025-06-22 at 12 16 59 PM" src="https://github.com/user-attachments/assets/f05e0229-2a78-4138-9281-f18a9801b930" />
+### Navigate through and between universes using our Space Assistant (Voice Mode also available)
+![Navigate through and between universes using our Space Assistant](assets/navigate-through-and-between-universes-using-our-space-assistant.png)
 
 ### Custom Narration Generated from the current view to make every scene interesting
-<img width="1505" alt="Screen Shot 2025-06-22 at 12 17 36 PM" src="https://github.com/user-attachments/assets/1a27d7d9-df4c-4a3f-bdcb-6ba8e6f9d2fd" />
+![Custom Narration Generated from the current view to make every scene interesting](assets/custom-narration-generated-from-the-current-view-to-make-every-scene-interesting.png)
 
 
 ## Project Structure
